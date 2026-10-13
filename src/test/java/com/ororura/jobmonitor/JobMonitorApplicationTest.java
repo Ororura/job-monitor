@@ -28,7 +28,7 @@ class JobMonitorApplicationTest {
   void startsWithSqliteAndAppliesMigration(
       @Autowired JdbcTemplate jdbcTemplate, @Autowired Flyway flyway) {
     assertThat(temporaryDirectory.resolve("database files/job-monitor.db")).isRegularFile();
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("1");
+    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("2");
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT value FROM application_metadata WHERE key = ?",
@@ -49,7 +49,7 @@ class JobMonitorApplicationTest {
     assertThat(
             jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class))
-        .isEqualTo(1);
+        .isEqualTo(2);
     jdbcTemplate.update("DELETE FROM application_metadata WHERE key = ?", "test");
   }
 }
