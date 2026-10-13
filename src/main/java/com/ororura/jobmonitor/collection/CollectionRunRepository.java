@@ -42,6 +42,36 @@ public class CollectionRunRepository {
     this.jdbcTemplate = jdbcTemplate;
   }
 
+  public long countBetween(CollectionRunStatus status, Instant from, Instant until) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM collection_runs WHERE status = ? AND started_at >= ? AND started_at <= ?",
+            Long.class,
+            status.name(),
+            TIMESTAMP_FORMAT.format(from),
+            TIMESTAMP_FORMAT.format(until)));
+  }
+
+  public List<CollectionRun> findRecentFailures(int limit) {
+    return jdbcTemplate.query(
+        """
+        SELECT * FROM collection_runs WHERE status IN ('FAILED', 'INTERRUPTED')
+        ORDER BY started_at DESC, id DESC LIMIT ?
+        """,
+        ROW_MAPPER,
+        limit);
+  }
+
+  public List<CollectionRun> findLatestPerSearch() {
+    return jdbcTemplate.query(
+        """
+        SELECT r.* FROM collection_runs r WHERE r.search_query_id IS NOT NULL AND r.id = (
+          SELECT latest.id FROM collection_runs latest WHERE latest.search_query_id = r.search_query_id
+          ORDER BY latest.started_at DESC, latest.id DESC LIMIT 1)
+        """,
+        ROW_MAPPER);
+  }
+
   public void insert(CollectionRun run) {
     jdbcTemplate.update(
         """

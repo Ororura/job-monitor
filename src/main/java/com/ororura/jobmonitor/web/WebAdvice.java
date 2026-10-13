@@ -26,6 +26,12 @@ public class WebAdvice {
 
   @ModelAttribute
   void common(Model model, HttpServletRequest request) {
+    model.addAttribute("fragmentRequest", htmx(request));
+    Object message = request.getSession().getAttribute("webMessage");
+    if (message != null) {
+      request.getSession().removeAttribute("webMessage");
+      model.addAttribute("message", message);
+    }
     model.addAttribute("csrf", WebConfiguration.csrf(request));
     model.addAttribute("path", request.getRequestURI());
     model.addAttribute(
@@ -35,7 +41,8 @@ public class WebAdvice {
   }
 
   static boolean htmx(HttpServletRequest request) {
-    return "true".equals(request.getHeader("HX-Request"));
+    return "true".equals(request.getHeader("HX-Request"))
+        && !"true".equals(request.getHeader("HX-History-Restore-Request"));
   }
 
   @ExceptionHandler({
@@ -51,11 +58,18 @@ public class WebAdvice {
     SearchValidationException.class,
     VacancyValidationException.class,
     CollectionValidationException.class,
-    MethodArgumentTypeMismatchException.class
+    MethodArgumentTypeMismatchException.class,
+    org.springframework.web.bind.MethodArgumentNotValidException.class,
+    org.springframework.web.bind.MissingServletRequestParameterException.class
   })
   String invalid(HttpServletRequest request, HttpServletResponse response, Model model) {
     return error(
         400, "Некорректные параметры. Проверьте фильтры и поля формы.", request, response, model);
+  }
+
+  @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+  String methodNotAllowed(HttpServletRequest request, HttpServletResponse response, Model model) {
+    return error(405, "Этот HTTP-метод не поддерживается.", request, response, model);
   }
 
   @ExceptionHandler(WebForbiddenException.class)
@@ -73,12 +87,13 @@ public class WebAdvice {
         500, "Не удалось выполнить действие. Попробуйте ещё раз.", request, response, model);
   }
 
-  private static String error(
+  private String error(
       int status,
       String message,
       HttpServletRequest request,
       HttpServletResponse response,
       Model model) {
+    common(model, request);
     response.setStatus(status);
     model.addAttribute("message", message);
     model.addAttribute("error", true);

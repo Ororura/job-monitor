@@ -21,6 +21,9 @@ job-monitor:
 server:
   address: 127.0.0.1
   port: 8080
+  servlet:
+    session:
+      tracking-modes: cookie
 
 app:
   collection:

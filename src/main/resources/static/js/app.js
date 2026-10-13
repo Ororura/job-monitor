@@ -10,7 +10,7 @@ theme?.addEventListener('change', () => {
   try { localStorage.setItem('job-monitor-theme', theme.value); } catch (_) { /* Storage can be disabled. */ }
 });
 document.body.addEventListener('htmx:beforeSwap', event => {
-  if ([400, 403, 404, 409, 422, 500].includes(event.detail.xhr.status)) {
+  if (event.detail.xhr.status >= 400 && event.detail.xhr.status <= 599) {
     event.detail.shouldSwap = true;
     event.detail.isError = false;
   }

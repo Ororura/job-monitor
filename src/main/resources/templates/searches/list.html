@@ -1,0 +1,20 @@
+<!DOCTYPE html><html xmlns:th="http://www.thymeleaf.org" th:replace="~{layout :: page('Search Queries', ~{::section})}"><section>
+<div class="page-heading"><div><p class="eyebrow">СОХРАНЁННЫЕ ПОИСКИ</p><h1>Search Queries</h1><p>Управляйте выражениями и частотой проверки.</p></div><a class="button primary" th:href="@{/searches/new}">+ Новый запрос</a></div>
+<div id="search-results" th:fragment="results" th:attr="hx-get=${!pending.isEmpty() ? '/searches' : null},hx-trigger=${!pending.isEmpty() ? 'every 8s' : null}" hx-swap="outerHTML" hx-target="this">
+<th:block th:if="${fragmentRequest}"><div id="notice" hx-swap-oob="innerHTML"><th:block th:replace="~{fragments/notice :: notice}"></th:block></div></th:block>
+<div class="actions" style="margin-bottom:16px"><button type="button" hx-get="/searches" hx-target="#search-results" hx-swap="outerHTML">Обновить состояние</button><span class="muted">FAKE — тестовые вакансии, выражение не влияет на результат.</span></div>
+<div class="empty panel" th:if="${searches.isEmpty()}"><h2>Создайте первый запрос</h2><p>Сохраните поисковое выражение, выберите источник и запустите ручной сбор.</p><a class="button primary" th:href="@{/searches/new}">Новый запрос</a></div>
+<article class="panel search-card" th:each="q : ${searches}">
+ <div class="search-card-header"><div><h2 th:text="${q.name}"></h2><span class="badge" th:text="${q.source + (q.source == 'FAKE' ? ' · ТЕСТОВЫЙ ИСТОЧНИК' : '')}"></span></div><span class="badge" th:text="${q.enabled ? 'ВКЛЮЧЁН' : 'ВЫКЛЮЧЕН'}"></span></div>
+ <code class="expression" th:text="${q.queryText}"></code>
+ <div class="search-meta"><span th:text="${'Интервал: ' + q.intervalMinutes + ' мин'}"></span><span th:text="${'Следующий: ' + (!q.enabled ? '—' : (q.nextRunAt == null ? 'при следующем опросе' : @display.time(q.nextRunAt)))}"></span>
+ <th:block th:with="r=${latestRuns[q.id]}"><span th:text="${'Последний запуск: ' + (r == null ? '—' : @display.time(r.startedAt))}"></span><span class="badge" th:if="${r != null}" th:classappend="${r.status}" th:text="${r.status}"></span></th:block><span class="badge" th:if="${pending.contains(q.id)}">В ОЧЕРЕДИ / ВЫПОЛНЯЕТСЯ</span></div>
+ <p class="muted" th:if="${q.source == 'PLAYWRIGHT' and !playwrightReady}">PLAYWRIGHT выключен или не настроен. Проверьте Settings перед запуском.</p>
+ <div class="actions">
+ <form method="post" th:action="@{/searches/{id}/run(id=${q.id})}" th:attr="hx-post=@{/searches/{id}/run(id=${q.id})}" hx-target="#search-results" hx-swap="outerHTML"><input type="hidden" name="csrf" th:value="${csrf}"><button type="submit" class="primary">Запустить сбор</button></form>
+ <a class="button" th:href="@{/searches/{id}/edit(id=${q.id})}">Редактировать</a>
+ <form method="post" th:action="@{/searches/{id}/toggle(id=${q.id})}" th:attr="hx-post=@{/searches/{id}/toggle(id=${q.id})}" hx-target="#search-results" hx-swap="outerHTML"><input type="hidden" name="csrf" th:value="${csrf}"><button type="submit" th:text="${q.enabled ? 'Выключить' : 'Включить'}"></button></form>
+ <a class="button danger" th:href="@{/searches/{id}/delete(id=${q.id})}">Удалить</a>
+ </div>
+</article>
+</div></section></html>
