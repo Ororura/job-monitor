@@ -1,0 +1,1 @@
+<div xmlns:th="http://www.thymeleaf.org" th:fragment="notice" th:if="${message != null}" class="notice" th:classappend="${error == true ? 'notice-error' : 'notice-success'}" th:attr="role=${error == true ? 'alert' : 'status'}" th:text="${message}"></div>
