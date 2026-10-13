@@ -29,6 +29,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
 
+    implementation("com.microsoft.playwright:playwright:1.63.0")
+
     // Database
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     runtimeOnly("org.xerial:sqlite-jdbc:3.53.4.0")
@@ -90,6 +92,15 @@ tasks.withType<Pmd>().configureEach {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.register<JavaExec>("playwrightInstall") {
+    group = "application"
+    description = "Install Chromium binaries for this Playwright version"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.microsoft.playwright.CLI")
+    args("install", "chromium")
+    javaLauncher.set(javaToolchains.launcherFor(java.toolchain))
 }
 
 tasks.bootRun {

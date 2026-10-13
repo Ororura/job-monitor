@@ -27,3 +27,12 @@ app:
     enabled: false
     poll-interval: 30s
     queue-capacity: 32
+  playwright:
+    enabled: false
+    headless: true
+    navigation-timeout: 30s
+    operation-timeout: 10s
+    max-pages: 5
+    max-vacancies: 100
+    search-url: ${JOB_MONITOR_BROWSER_SEARCH_URL:}
+    access-confirmed: false
