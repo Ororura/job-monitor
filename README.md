@@ -3,8 +3,9 @@
 
 A single-user local application for collecting and reviewing job vacancies.
 The application starts Spring Boot, creates a SQLite database, applies Flyway
-migrations, and provides a REST API for managing search queries. Vacancy
-collection, scheduling, and UI are not implemented yet.
+migrations, and provides REST APIs for managing search queries and reviewing
+vacancies. Vacancy ingestion is available through `VacancyService` for future
+collection code. Collection, scheduling, and UI are not implemented yet.
 
 ## Requirements
 
@@ -59,7 +60,8 @@ Flyway validates and applies `src/main/resources/db/migration/V*__*.sql` on star
 `V1__initialize_database.sql` creates a small infrastructure metadata table, with
 no vacancy domain schema. Add a new migration for each schema change; never edit
 an applied migration. `V2__create_search_queries.sql` adds search queries without
-changing V1. Repeated startup keeps existing data and does not reapply migrations.
+changing V1. `V3__create_vacancies.sql` adds vacancies and their search matches.
+Repeated startup keeps existing data and does not reapply migrations.
 
 ## Search query API
 
@@ -112,6 +114,63 @@ curl -i http://127.0.0.1:8080/api/v1/search-queries \
   -d '{"name":"Invalid interval","queryText":"Java","intervalMinutes":9,"enabled":true}'
 ```
 
+## Vacancy persistence and API
+
+`VacancyService.save(VacancyData)` and `saveAll(List<VacancyData>)` ingest source
+data without HTTP or JDBC types. Both methods also accept a search UUID as a
+second argument to save the vacancy and its match in one transaction.
+`linkToSearch(vacancyId, searchQueryId)` associates an existing vacancy with
+another search. Batch ingestion is atomic: a failure rolls back the whole batch.
+An empty batch returns an empty list. Missing search UUIDs are rejected before
+ingestion. Batch results follow input order; repeated identities return the same
+vacancy UUID.
+
+Vacancies are unique by `(source, external_id)`, independently of title and URL.
+Upsert refreshes source fields and `lastSeenAt`, preserving the internal UUID,
+`firstSeenAt`, and user status. New vacancies have status `NEW`. Each vacancy can
+match multiple searches; duplicate matches are ignored. Deleting a search
+cascades its matches while preserving all vacancies and other matches.
+
+Required source fields are `source`, `externalId`, `title`, `employerName`, `area`,
+and an absolute HTTP/HTTPS `url` without embedded credentials. Surrounding
+whitespace is stripped; source identifiers remain case-sensitive. Salary bounds,
+currency, and publication time can be null. Non-null salaries must be non-negative,
+and the lower bound must not exceed the upper bound. Salaries use `BigDecimal`
+in Java and decimal TEXT in SQLite to preserve precision without conversion to
+floating point. Vacancy timestamps use `Instant` and UTC TEXT with nine fractional
+digits, so sorting by `firstSeenAt` also works within the same second.
+
+| Method | Path | Success |
+| --- | --- | --- |
+| GET | `/api/v1/vacancies` | 200, page JSON |
+| GET | `/api/v1/vacancies/{id}` | 200, vacancy JSON |
+| PATCH | `/api/v1/vacancies/{id}/status` | 200, updated vacancy JSON |
+
+There is no public creation endpoint. PATCH requires `{"status":"SAVED"}`;
+allowed statuses are `NEW`, `SAVED`, `APPLIED`, and `IGNORED`. Status changes do
+not modify source fields or observation timestamps. Missing vacancies return 404;
+invalid UUIDs, bodies, statuses, pagination, and sort values return 400.
+
+GET accepts optional `status`, `source`, and `searchQueryId` filters, combined
+with AND. An unknown source or search UUID returns an empty page. Pagination is
+zero-based: `page=0` and `size=20` by default; size must be between 1 and 100.
+Sort accepts `firstSeenAt,desc` (default) or `firstSeenAt,asc`; UUID is a stable
+tie-breaker in the same direction. The response contains `content`, `page`,
+`size`, and `totalElements` (the count after filtering, before pagination).
+
+```sh
+curl 'http://127.0.0.1:8080/api/v1/vacancies?page=0&size=20&sort=firstSeenAt,desc'
+curl 'http://127.0.0.1:8080/api/v1/vacancies?status=NEW&source=HH'
+
+# Use existing UUIDs from the local database/API:
+SEARCH_ID='replace-with-search-uuid'
+VACANCY_ID='replace-with-vacancy-uuid'
+curl "http://127.0.0.1:8080/api/v1/vacancies?searchQueryId=$SEARCH_ID&sort=firstSeenAt,asc"
+curl "http://127.0.0.1:8080/api/v1/vacancies/$VACANCY_ID"
+curl -X PATCH "http://127.0.0.1:8080/api/v1/vacancies/$VACANCY_ID/status" \
+  -H 'Content-Type: application/json' -d '{"status":"SAVED"}'
+```
+
 ## Verification and build
 
 ```sh
@@ -127,7 +186,11 @@ outside the repository and do not access the user's database or external website
 Integration tests start a real local HTTP server and verify search CRUD, complex
 expressions, input validation, and missing records. Repository tests verify
 SQLite field round-trips through an independent connection, database constraints,
-and a V1-to-V2 upgrade preserving existing data. Migration reruns remain a no-op.
+and a V1-to-V2 upgrade preserving existing data. Vacancy tests cover exact salary
+round-trips, global deduplication, field updates, preserved timestamps/status,
+multiple matches, deletion cascades, transaction rollback (including batch
+failure), filters, stable pagination, HTTP errors, and a V2-to-V3 upgrade retaining
+searches and metadata. Migration reruns remain a no-op.
 Unit tests cover search validation and timestamp behavior with a fixed clock,
 macOS/Linux default paths, XDG_DATA_HOME, and an explicit override.
 
@@ -172,7 +235,7 @@ src/main/java/com/ororura/jobmonitor/
   search/          Search model, JDBC repository, service, REST DTOs and endpoints
   collection/      Placeholders for future collection and scheduling
   source/          Placeholders for future source adapters
-  vacancy/         Placeholders for future vacancy persistence and review
+  vacancy/         Vacancy data/model, JDBC persistence, service and review REST API
 src/main/resources/
   application.yml
   db/migration/
