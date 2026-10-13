@@ -371,7 +371,7 @@ class VacancyRepositoryTest {
         NOW.plusSeconds(1800).toString());
     var before = database.queryForMap("SELECT * FROM search_queries WHERE id = ?", id);
 
-    Flyway flyway = Flyway.configure().dataSource(dataSource).load();
+    Flyway flyway = Flyway.configure().dataSource(dataSource).target("3").load();
 
     assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
     assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("3");

@@ -21,3 +21,9 @@ job-monitor:
 server:
   address: 127.0.0.1
   port: 8080
+
+app:
+  collection:
+    enabled: false
+    poll-interval: 30s
+    queue-capacity: 32

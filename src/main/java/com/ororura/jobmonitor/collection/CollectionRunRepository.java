@@ -50,7 +50,7 @@ public class CollectionRunRepository {
         VALUES (?, ?, ?, ?, 'RUNNING', ?)
         """,
         run.id().toString(),
-        run.searchQueryId().toString(),
+        run.searchQueryId() == null ? null : run.searchQueryId().toString(),
         run.searchQueryName(),
         run.source(),
         TIMESTAMP_FORMAT.format(run.startedAt()));

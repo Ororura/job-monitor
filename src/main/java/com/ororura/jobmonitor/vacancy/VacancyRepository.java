@@ -103,6 +103,15 @@ public class VacancyRepository {
         .findFirst();
   }
 
+  public boolean exists(String source, String externalId) {
+    return Boolean.TRUE.equals(
+        jdbcTemplate.queryForObject(
+            "SELECT EXISTS(SELECT 1 FROM vacancies WHERE source = ? AND external_id = ?)",
+            Boolean.class,
+            source,
+            externalId));
+  }
+
   public boolean updateStatus(UUID id, VacancyStatus status) {
     return jdbcTemplate.update(
             "UPDATE vacancies SET status = ? WHERE id = ?", status.name(), id.toString())

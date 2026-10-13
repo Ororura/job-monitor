@@ -79,4 +79,11 @@ public class SearchRepository {
   public boolean deleteById(UUID id) {
     return jdbcTemplate.update("DELETE FROM search_queries WHERE id = ?", id.toString()) == 1;
   }
+
+  public void updateNextRunAt(UUID id, Instant nextRunAt) {
+    jdbcTemplate.update(
+        "UPDATE search_queries SET next_run_at = ? WHERE id = ?",
+        nextRunAt == null ? null : nextRunAt.toString(),
+        id.toString());
+  }
 }

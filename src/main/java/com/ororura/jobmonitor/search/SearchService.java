@@ -2,6 +2,7 @@ package com.ororura.jobmonitor.search;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,13 @@ public class SearchService {
   public SearchQuery update(UUID id, SearchQueryRequest request) {
     validate(request);
     SearchQuery existing = findById(id);
+    Instant nextRunAt = existing.nextRunAt();
+    if (nextRunAt != null) {
+      // Keep fixed delay anchored to the last completion when the interval changes.
+      nextRunAt =
+          nextRunAt.plus(
+              (long) request.intervalMinutes() - existing.intervalMinutes(), ChronoUnit.MINUTES);
+    }
     SearchQuery updated =
         new SearchQuery(
             id,
@@ -56,7 +64,7 @@ public class SearchService {
             request.enabled(),
             existing.createdAt(),
             clock.instant(),
-            existing.nextRunAt());
+            nextRunAt);
     if (!repository.update(updated)) {
       throw new SearchNotFoundException(id);
     }
