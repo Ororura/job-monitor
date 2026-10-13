@@ -95,6 +95,20 @@ tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
+tasks.test {
+    useJUnitPlatform { excludeTags("browser") }
+}
+
+tasks.register<Test>("browserTest") {
+    group = "verification"
+    description = "Run Chromium integration tests against local fixtures (requires playwrightInstall)"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("browser") }
+    systemProperty("jobmonitor.browser.headless", !providers.gradleProperty("headed").isPresent)
+    shouldRunAfter(tasks.test)
+}
+
 tasks.register<JavaExec>("playwrightInstall") {
     group = "application"
     description = "Install Chromium binaries for this Playwright version"

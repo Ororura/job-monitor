@@ -3,6 +3,8 @@ package com.ororura.jobmonitor.source;
 import com.ororura.jobmonitor.vacancy.VacancyData;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -78,7 +80,7 @@ public class HtmlVacancyParser {
       throw new IllegalArgumentException("Invalid vacancy URL");
     }
     // Canonical identity and URL exclude tracking query parameters and fragments.
-    String canonical = url.getScheme() + "://" + url.getRawAuthority() + url.getRawPath();
+    String canonical = canonicalUrl(url);
     String id = optional(card.attr("data-external-id"));
     if (id == null) {
       var matcher = ID_PATH.matcher(url.getPath());
@@ -115,6 +117,24 @@ public class HtmlVacancyParser {
       return null;
     }
     return new BigDecimal(normalized.replaceAll("[\\s\\p{Zs}]", ""));
+  }
+
+  private static String canonicalUrl(URI url) {
+    String base = url.getScheme() + "://" + url.getRawAuthority() + url.getRawPath();
+    if (url.getRawQuery() == null) {
+      return base;
+    }
+    List<String> parameters = new ArrayList<>();
+    for (String parameter : url.getRawQuery().split("&")) {
+      String key =
+          URLDecoder.decode(parameter.split("=", 2)[0], StandardCharsets.UTF_8)
+              .toLowerCase(java.util.Locale.ROOT);
+      if (!key.equals("tracking") && !key.startsWith("utm_")) {
+        parameters.add(parameter);
+      }
+    }
+    // Some providers identify vacancies in the query string. Preserve semantic parameters.
+    return parameters.isEmpty() ? base : base + "?" + String.join("&", parameters);
   }
 
   private static Instant instant(String value) {

@@ -16,11 +16,9 @@ public record PlaywrightProperties(
     boolean accessConfirmed) {
   public PlaywrightProperties {
     if (navigationTimeout == null
-        || navigationTimeout.isZero()
-        || navigationTimeout.isNegative()
+        || navigationTimeout.toMillis() < 1
         || operationTimeout == null
-        || operationTimeout.isZero()
-        || operationTimeout.isNegative()) {
+        || operationTimeout.toMillis() < 1) {
       throw new IllegalArgumentException("Playwright timeouts must be positive");
     }
     if (maxPages < 1 || maxVacancies < 1) {

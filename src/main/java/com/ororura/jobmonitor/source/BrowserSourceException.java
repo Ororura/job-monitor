@@ -3,6 +3,7 @@ package com.ororura.jobmonitor.source;
 public class BrowserSourceException extends RuntimeException {
   public enum Reason {
     DISABLED,
+    SHUTDOWN,
     CONFIGURATION,
     LAUNCH,
     NAVIGATION,

@@ -58,6 +58,22 @@ class CollectionServiceTest {
   }
 
   @Test
+  void disabledBrowserSourceRecordsFailureWithoutAffectingFakeCollection() {
+    var browser = searches.create(new SearchQueryRequest("Browser", JAVA, 10, true, "PLAYWRIGHT"));
+    service.collect(browser.id(), false);
+    var failed = runs.findAll(browser.id(), null, 0, 20).content().getFirst();
+    assertThat(failed.source()).isEqualTo("PLAYWRIGHT");
+    assertThat(failed.status()).isEqualTo(CollectionRunStatus.FAILED);
+    assertThat(failed.errorMessage()).isEqualTo("Browser collection failed: DISABLED");
+    assertThat(searches.findById(browser.id()).nextRunAt())
+        .isEqualTo(clock.instant().plusSeconds(600));
+    useFakeSource();
+    var fake = search(10, false);
+    service.collect(fake.id(), false);
+    assertThat(runs.findAll(fake.id(), CollectionRunStatus.SUCCESS, 0, 20).content()).hasSize(1);
+  }
+
+  @Test
   void firstRunUsesCompletionTimeAndIndividualIntervalsWithoutFetchingInTransaction() {
     var first = search(10, true);
     var second = search(60, true);

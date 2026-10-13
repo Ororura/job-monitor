@@ -45,6 +45,17 @@ class HtmlVacancyParserTest {
   }
 
   @Test
+  void canonicalUrlPreservesSemanticQueryParameters() throws IOException {
+    var html =
+        fixture(RESULTS)
+            .replace(
+                "/vacancies/101?tracking=x#details",
+                "/job?id=101&amp;utm_source=fixture&amp;tracking=x#details");
+    assertThat(parser.parse(html, URL, 100).vacancies().getFirst().url())
+        .isEqualTo("http://127.0.0.1:8081/job?id=101");
+  }
+
+  @Test
   void unknownOptionalFieldsStayNullAndIdentityFallsBackToUrl() throws IOException {
     var second = parser.parse(fixture(RESULTS), URL, 100).vacancies().get(1);
     assertThat(second.externalId()).isEqualTo("102");

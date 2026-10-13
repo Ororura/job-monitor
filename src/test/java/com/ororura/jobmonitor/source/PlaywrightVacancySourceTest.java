@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
+import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.PlaywrightException;
@@ -31,6 +32,7 @@ class PlaywrightVacancySourceTest {
       "  (Java AND \"Spring Boot\") OR (Kotlin AND NOT \"senior\") + C# & Москва  ";
   private final ChromiumBrowser browser = mock(ChromiumBrowser.class);
   private final Page page = mock(Page.class);
+  private final BrowserContext context = mock(BrowserContext.class);
   private final Locator locator = mock(Locator.class);
   private final Response response = mock(Response.class);
 
@@ -48,6 +50,7 @@ class PlaywrightVacancySourceTest {
   }
 
   private PlaywrightVacancySource configured(int maxPages, int maxVacancies) {
+    when(page.context()).thenReturn(context);
     var properties =
         new PlaywrightProperties(
             true,
@@ -167,6 +170,31 @@ class PlaywrightVacancySourceTest {
     doThrow(new TimeoutError("private")).when(locator).waitFor(any());
     assertThatThrownBy(() -> source.fetch(query()))
         .hasMessage("Browser collection failed: TIMEOUT");
+  }
+
+  @Test
+  void shutdownStopsQueuedJobsWithoutCreatingBrowserResources() {
+    var source = configured(5, 100);
+    source.onApplicationEvent(
+        new org.springframework.context.event.ContextClosedEvent(
+            mock(org.springframework.context.ApplicationContext.class)));
+    assertThatThrownBy(() -> source.fetch(query())).hasMessageContaining("SHUTDOWN");
+    verify(browser, never()).withPage(any());
+  }
+
+  @Test
+  void shutdownDuringCollectionPreventsNavigationToAnotherPage() throws Exception {
+    var source = configured(5, 100);
+    when(page.content())
+        .thenAnswer(
+            invocation -> {
+              source.onApplicationEvent(
+                  new org.springframework.context.event.ContextClosedEvent(
+                      mock(org.springframework.context.ApplicationContext.class)));
+              return HtmlVacancyParserTest.fixture(RESULTS);
+            });
+    assertThatThrownBy(() -> source.fetch(query())).hasMessageContaining("SHUTDOWN");
+    verify(page).navigate(anyString(), any());
   }
 
   @Test

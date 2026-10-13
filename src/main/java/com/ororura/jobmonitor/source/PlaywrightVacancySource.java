@@ -18,17 +18,22 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.stereotype.Component;
 
 @Component
-public class PlaywrightVacancySource implements VacancySource {
+public class PlaywrightVacancySource
+    implements VacancySource, ApplicationListener<ContextClosedEvent> {
   private static final Logger LOGGER = LoggerFactory.getLogger(PlaywrightVacancySource.class);
   private final PlaywrightProperties properties;
   private final ChromiumBrowser browser;
   private final HtmlVacancyParser parser;
+  private final AtomicBoolean stopping = new AtomicBoolean();
 
   public PlaywrightVacancySource(
       PlaywrightProperties properties, ChromiumBrowser browser, HtmlVacancyParser parser) {
@@ -44,6 +49,7 @@ public class PlaywrightVacancySource implements VacancySource {
 
   @Override
   public List<VacancyData> fetch(SearchQuery query) {
+    requireRunning();
     if (!properties.enabled()) {
       throw new BrowserSourceException(BrowserSourceException.Reason.DISABLED);
     }
@@ -57,11 +63,12 @@ public class PlaywrightVacancySource implements VacancySource {
 
   private List<VacancyData> collect(Page page, String expression) {
     var accessFailure = new AtomicReference<BrowserSourceException.Reason>();
-    page.route("**/*", route -> permittedRequest(route, accessFailure));
+    page.context().route("**/*", route -> permittedRequest(route, accessFailure));
     var unique = new LinkedHashMap<String, VacancyData>();
     Set<URI> visited = new HashSet<>();
     URI next = queryUrl(properties.searchUrl(), expression);
     for (int number = 0; number < properties.maxPages(); number++) {
+      requireRunning();
       requireSearchPage(next);
       if (!visited.add(next)) {
         break;
@@ -199,6 +206,18 @@ public class PlaywrightVacancySource implements VacancySource {
   private static void checkAccess(AtomicReference<BrowserSourceException.Reason> failure) {
     if (failure.get() != null) {
       throw new BrowserSourceException(failure.get());
+    }
+  }
+
+  @Override
+  public void onApplicationEvent(ContextClosedEvent event) {
+    // Shutdown only signals the worker. Playwright teardown remains on its owning thread.
+    stopping.set(true);
+  }
+
+  private void requireRunning() {
+    if (stopping.get() || Thread.currentThread().isInterrupted()) {
+      throw new BrowserSourceException(BrowserSourceException.Reason.SHUTDOWN);
     }
   }
 }

@@ -41,6 +41,8 @@ class PlaywrightPropertiesTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> properties(false, null, false, 1, Duration.ZERO))
         .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> properties(false, null, false, 1, Duration.ofNanos(1)))
+        .isInstanceOf(IllegalArgumentException.class);
   }
 
   private static PlaywrightProperties properties(
