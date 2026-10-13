@@ -13,6 +13,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.ororura.jobmonitor.search.SearchNotFoundException;
 import com.ororura.jobmonitor.search.SearchService;
+import com.ororura.jobmonitor.source.PlaywrightProperties;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -111,7 +112,17 @@ final class CollectionDispatcherTest {
   void realWorkerSerializesJobsAndBoundsQueueCapacity() throws InterruptedException {
     var worker =
         new CollectionConfiguration()
-            .collectionWorker(new CollectionProperties(false, Duration.ofSeconds(30), 1));
+            .collectionWorker(
+                new CollectionProperties(false, Duration.ofSeconds(30), 1),
+                new PlaywrightProperties(
+                    false,
+                    true,
+                    Duration.ofSeconds(30),
+                    Duration.ofSeconds(10),
+                    5,
+                    100,
+                    null,
+                    false));
     worker.initialize();
     var bounded = new CollectionDispatcher(searches, service, worker);
     var started = new CountDownLatch(1);

@@ -136,8 +136,9 @@ public class VacancyService {
     String source = required(data.source(), "Source");
     String externalId = required(data.externalId(), "External ID");
     String title = required(data.title(), "Title");
-    String employerName = required(data.employerName(), "Employer name");
-    String area = required(data.area(), "Area");
+    String employerName =
+        data.employerName() == null ? null : required(data.employerName(), "Employer name");
+    String area = data.area() == null ? null : required(data.area(), "Area");
     String url = required(data.url(), "URL");
     URI uri;
     try {

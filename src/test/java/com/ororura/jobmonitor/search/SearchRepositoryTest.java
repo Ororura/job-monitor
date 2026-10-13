@@ -42,6 +42,43 @@ class SearchRepositoryTest {
   }
 
   @Test
+  void upgradesV4SearchesToFakeAndPersistsBrowserSource(@TempDir Path upgradeDirectory) {
+    var dataSource =
+        new DriverManagerDataSource("jdbc:sqlite:" + upgradeDirectory.resolve("upgrade.db"));
+    Flyway.configure().dataSource(dataSource).target("4").load().migrate();
+    var database = new JdbcTemplate(dataSource);
+    var existing = query(JAVA, JAVA, 10);
+    database.update(
+        "INSERT INTO search_queries VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        existing.id().toString(),
+        JAVA,
+        JAVA,
+        10,
+        true,
+        existing.createdAt().toString(),
+        existing.updatedAt().toString(),
+        existing.nextRunAt().toString());
+    Flyway.configure().dataSource(dataSource).target("5").load().migrate();
+    var upgraded = new SearchRepository(database);
+    assertThat(upgraded.findById(existing.id())).contains(existing);
+    var browser =
+        new SearchQuery(
+            existing.id(),
+            JAVA,
+            JAVA,
+            10,
+            true,
+            existing.createdAt(),
+            existing.updatedAt(),
+            existing.nextRunAt(),
+            "PLAYWRIGHT");
+    assertThat(upgraded.update(browser)).isTrue();
+    assertThat(upgraded.findById(existing.id())).contains(browser);
+    assertThatThrownBy(() -> database.update("UPDATE search_queries SET source = 'HH'"))
+        .isInstanceOf(UncategorizedSQLException.class);
+  }
+
+  @Test
   void persistsAllFieldsInSqliteAndReadsThemThroughANewConnection() throws Exception {
     SearchQuery query = query(JAVA, "  (Java AND \"Spring Boot\") OR NOT ('senior')  ", 10);
     repository.insert(query);

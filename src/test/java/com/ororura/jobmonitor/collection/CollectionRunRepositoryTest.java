@@ -120,7 +120,7 @@ class CollectionRunRepositoryTest {
     var database = new JdbcTemplate(dataSource);
     database.update("INSERT INTO application_metadata (key, value) VALUES ('preserved', 'yes')");
     Flyway latest = Flyway.configure().dataSource(dataSource).load();
-    assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
+    assertThat(latest.migrate().migrationsExecuted).isEqualTo(3);
     assertThat(
             database.queryForObject(
                 "SELECT value FROM application_metadata WHERE key = 'preserved'", String.class))

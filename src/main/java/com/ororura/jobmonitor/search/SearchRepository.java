@@ -22,7 +22,8 @@ public class SearchRepository {
             result.getBoolean("enabled"),
             Instant.parse(result.getString("created_at")),
             Instant.parse(result.getString("updated_at")),
-            nextRunAt == null ? null : Instant.parse(nextRunAt));
+            nextRunAt == null ? null : Instant.parse(nextRunAt),
+            result.getString("source"));
       };
 
   private final JdbcTemplate jdbcTemplate;
@@ -46,8 +47,8 @@ public class SearchRepository {
     jdbcTemplate.update(
         """
         INSERT INTO search_queries
-          (id, name, query_text, interval_minutes, enabled, created_at, updated_at, next_run_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (id, name, query_text, interval_minutes, enabled, created_at, updated_at, next_run_at, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         query.id().toString(),
         query.name(),
@@ -56,14 +57,15 @@ public class SearchRepository {
         query.enabled(),
         query.createdAt().toString(),
         query.updatedAt().toString(),
-        query.nextRunAt() == null ? null : query.nextRunAt().toString());
+        query.nextRunAt() == null ? null : query.nextRunAt().toString(),
+        query.source());
   }
 
   public boolean update(SearchQuery query) {
     return jdbcTemplate.update(
             """
         UPDATE search_queries
-        SET name = ?, query_text = ?, interval_minutes = ?, enabled = ?, updated_at = ?, next_run_at = ?
+        SET name = ?, query_text = ?, interval_minutes = ?, enabled = ?, updated_at = ?, next_run_at = ?, source = ?
         WHERE id = ?
         """,
             query.name(),
@@ -72,6 +74,7 @@ public class SearchRepository {
             query.enabled(),
             query.updatedAt().toString(),
             query.nextRunAt() == null ? null : query.nextRunAt().toString(),
+            query.source(),
             query.id().toString())
         == 1;
   }

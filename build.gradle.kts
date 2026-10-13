@@ -29,6 +29,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
 
+    implementation("com.microsoft.playwright:playwright:1.63.0")
+    implementation("org.jsoup:jsoup:1.23.2")
+
     // Database
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     runtimeOnly("org.xerial:sqlite-jdbc:3.53.4.0")
@@ -90,6 +93,29 @@ tasks.withType<Pmd>().configureEach {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.test {
+    useJUnitPlatform { excludeTags("browser") }
+}
+
+tasks.register<Test>("browserTest") {
+    group = "verification"
+    description = "Run Chromium integration tests against local fixtures (requires playwrightInstall)"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("browser") }
+    systemProperty("jobmonitor.browser.headless", !providers.gradleProperty("headed").isPresent)
+    shouldRunAfter(tasks.test)
+}
+
+tasks.register<JavaExec>("playwrightInstall") {
+    group = "application"
+    description = "Install Chromium binaries for this Playwright version"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("com.microsoft.playwright.CLI")
+    args("install", "chromium")
+    javaLauncher.set(javaToolchains.launcherFor(java.toolchain))
 }
 
 tasks.bootRun {

@@ -1,0 +1,2 @@
+ALTER TABLE search_queries ADD COLUMN source TEXT NOT NULL DEFAULT 'FAKE'
+    CHECK (source IN ('FAKE', 'PLAYWRIGHT'));
