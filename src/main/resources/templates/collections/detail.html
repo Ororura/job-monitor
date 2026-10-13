@@ -1,0 +1,7 @@
+<!DOCTYPE html><html xmlns:th="http://www.thymeleaf.org" th:replace="~{layout :: page('Collection History', ~{::section})}"><section>
+<div class="page-heading"><div><p class="eyebrow">COLLECTION HISTORY</p><h1>Подробности запуска</h1></div><a class="button" href="/collections">← История</a></div>
+<div id="run-detail" class="panel" th:fragment="detail" th:attr="hx-get=${run.status.name() == 'RUNNING' ? '/collections/' + run.id : null},hx-trigger=${run.status.name() == 'RUNNING' ? 'every 8s' : null}" hx-target="this" hx-swap="outerHTML">
+<div class="panel-heading"><h2 th:text="${run.searchQueryName}"></h2><span class="badge" th:classappend="${run.status}" th:text="${run.status}"></span></div>
+<dl class="settings-list"><div><dt>ID запуска</dt><dd th:text="${run.id}"></dd></div><div><dt>Источник</dt><dd th:text="${run.source + (run.source == 'FAKE' ? ' · Тестовые данные' : '')}"></dd></div><div><dt>Начало</dt><dd th:text="${@display.time(run.startedAt)}"></dd></div><div><dt>Завершение</dt><dd th:text="${@display.time(run.finishedAt)}"></dd></div><div><dt>Продолжительность</dt><dd th:text="${@display.duration(run)}"></dd></div><div><dt>Получено / создано / обновлено</dt><dd th:text="${run.fetchedCount + ' / ' + run.createdCount + ' / ' + run.updatedCount}"></dd></div><div><dt>Диагностика</dt><dd th:text="${@display.diagnostic(run)}"></dd></div></dl>
+<p class="muted" th:if="${run.searchQueryId == null}">Исходный поисковый запрос удалён. История сохранена.</p>
+</div></section></html>
