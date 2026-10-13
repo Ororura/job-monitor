@@ -6,7 +6,9 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +52,32 @@ public class VacancyService {
     List<UUID> searchIds = searchIds(searchQueryId);
     Instant seenAt = clock.instant();
     return normalized.stream().map(item -> repository.upsert(item, seenAt, searchIds)).toList();
+  }
+
+  @Transactional
+  public VacancyIngestionResult ingest(List<VacancyData> data, UUID searchQueryId) {
+    if (data == null) {
+      throw new VacancyValidationException("Vacancy list is required");
+    }
+    // Count distinct normalized identities; the last occurrence supplies the source fields.
+    Map<List<String>, VacancyData> unique = new LinkedHashMap<>();
+    for (VacancyData item : data) {
+      VacancyData normalized = normalize(item);
+      unique.put(List.of(normalized.source(), normalized.externalId()), normalized);
+    }
+    List<UUID> searchIds = searchIds(searchQueryId);
+    Instant seenAt = clock.instant();
+    int created = 0;
+    int updated = 0;
+    for (VacancyData item : unique.values()) {
+      if (repository.exists(item.source(), item.externalId())) {
+        updated++;
+      } else {
+        created++;
+      }
+      repository.upsert(item, seenAt, searchIds);
+    }
+    return new VacancyIngestionResult(created, updated);
   }
 
   @Transactional

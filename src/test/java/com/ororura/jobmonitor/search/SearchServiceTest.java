@@ -57,7 +57,7 @@ class SearchServiceTest {
   }
 
   @Test
-  void updatesEditableFieldsAndPreservesIdentityCreationTimeAndNextRun() {
+  void updatesEditableFieldsPreservingIdentityAndCompletionAnchorEvenWhenDisabled() {
     SearchQuery existing = existingQuery();
     when(repository.findById(existing.id())).thenReturn(Optional.of(existing));
     SearchQuery expected =
@@ -69,7 +69,7 @@ class SearchServiceTest {
             false,
             existing.createdAt(),
             NOW,
-            existing.nextRunAt());
+            existing.nextRunAt().plusSeconds(1800));
     when(repository.update(expected)).thenReturn(true);
 
     assertThat(
@@ -88,6 +88,17 @@ class SearchServiceTest {
 
     assertThat(service.update(disabled.id(), new SearchQueryRequest(JAVA, JAVA, 10, true)))
         .isEqualTo(expected);
+  }
+
+  @Test
+  void changingEnabledIntervalRecalculatesNextRunFromPreviousCompletion() {
+    SearchQuery existing = existingQuery();
+    when(repository.findById(existing.id())).thenReturn(Optional.of(existing));
+    when(repository.update(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+    SearchQuery updated =
+        service.update(
+            existing.id(), new SearchQueryRequest(existing.name(), existing.queryText(), 10, true));
+    assertThat(updated.nextRunAt()).isEqualTo(existing.nextRunAt().minusSeconds(1200));
   }
 
   @Test
