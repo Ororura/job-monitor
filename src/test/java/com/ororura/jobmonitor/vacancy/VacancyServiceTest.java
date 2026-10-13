@@ -39,6 +39,13 @@ class VacancyServiceTest {
       new VacancyService(repository, searchRepository, Clock.fixed(NOW, ZoneOffset.UTC));
 
   @Test
+  void acceptsUnknownEmployerAndAreaWithoutInventingValues() {
+    var input = new VacancyData("PLAYWRIGHT", "1", JAVA, null, null, null, null, null, URL, null);
+    service.save(input);
+    verify(repository).upsert(input, NOW, List.of());
+  }
+
+  @Test
   void normalizesSourceDataAndUsesInjectedUtcClock() {
     VacancyData input =
         new VacancyData(
@@ -165,9 +172,7 @@ class VacancyServiceTest {
         new VacancyData("HH", " ", JAVA, EMPLOYER, AREA, null, null, null, URL, null),
         new VacancyData("HH", "1", null, EMPLOYER, AREA, null, null, null, URL, null),
         new VacancyData("HH", "1", " ", EMPLOYER, AREA, null, null, null, URL, null),
-        new VacancyData("HH", "1", JAVA, null, AREA, null, null, null, URL, null),
         new VacancyData("HH", "1", JAVA, " ", AREA, null, null, null, URL, null),
-        new VacancyData("HH", "1", JAVA, EMPLOYER, null, null, null, null, URL, null),
         new VacancyData("HH", "1", JAVA, EMPLOYER, " ", null, null, null, URL, null),
         new VacancyData("HH", "1", JAVA, EMPLOYER, AREA, null, null, null, null, null),
         new VacancyData("HH", "1", JAVA, EMPLOYER, AREA, null, null, null, " ", null),

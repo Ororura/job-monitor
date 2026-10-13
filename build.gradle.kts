@@ -30,6 +30,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
 
     implementation("com.microsoft.playwright:playwright:1.63.0")
+    implementation("org.jsoup:jsoup:1.23.2")
 
     // Database
     implementation("org.springframework.boot:spring-boot-starter-flyway")
