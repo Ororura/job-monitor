@@ -26,7 +26,7 @@ class ChromiumBrowserTest {
   private ChromiumBrowser configuredBrowser() {
     when(playwright.chromium()).thenReturn(chromium);
     when(chromium.launch(any())).thenReturn(browser);
-    when(browser.newContext()).thenReturn(context);
+    when(browser.newContext(any())).thenReturn(context);
     when(context.newPage()).thenReturn(page);
     return new ChromiumBrowser(properties(), () -> playwright);
   }
@@ -114,7 +114,7 @@ class ChromiumBrowserTest {
   @Test
   void contextCreationFailureClosesBrowserAndPlaywright() {
     var infrastructure = configuredBrowser();
-    when(browser.newContext()).thenThrow(new PlaywrightException("private"));
+    when(browser.newContext(any())).thenThrow(new PlaywrightException("private"));
     assertThatThrownBy(() -> infrastructure.withPage(p -> null))
         .isInstanceOf(BrowserSourceException.class);
     verify(browser).close();

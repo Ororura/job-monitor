@@ -6,6 +6,7 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
+import com.microsoft.playwright.options.ServiceWorkerPolicy;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -36,7 +37,9 @@ public class ChromiumBrowser {
     // No browser state escapes this invocation: creation, use and teardown share the worker thread.
     try (Playwright playwright = createPlaywright();
         Browser browser = launch(playwright);
-        BrowserContext context = browser.newContext();
+        BrowserContext context =
+            browser.newContext(
+                new Browser.NewContextOptions().setServiceWorkers(ServiceWorkerPolicy.BLOCK));
         Page page = context.newPage()) {
       context.setDefaultNavigationTimeout(properties.navigationTimeout().toMillis());
       context.setDefaultTimeout(properties.operationTimeout().toMillis());
