@@ -56,6 +56,18 @@ public class CollectionService implements SmartInitializingSingleton {
         });
   }
 
+  public CollectionRun findById(UUID id) {
+    return runs.findById(id).orElseThrow(() -> new CollectionRunNotFoundException(id));
+  }
+
+  public CollectionRunPage findAll(UUID searchId, CollectionRunStatus status, int page, int size) {
+    if (page < 0 || size < 1 || size > 100) {
+      throw new CollectionValidationException(
+          "Page must be non-negative and size must be 1 to 100");
+    }
+    return runs.findAll(searchId, status, page, size);
+  }
+
   void collect(UUID searchId, boolean automatic) {
     StartedCollection started = transaction.execute(status -> start(searchId, automatic));
     if (started == null) {

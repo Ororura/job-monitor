@@ -4,8 +4,9 @@
 A single-user local application for collecting and reviewing job vacancies.
 The application starts Spring Boot, creates a SQLite database, applies Flyway
 migrations, and provides REST APIs for managing search queries and reviewing
-vacancies. Vacancy ingestion is available through `VacancyService` for future
-collection code. Collection, scheduling, and UI are not implemented yet.
+vacancies. An offline fake source, a bounded sequential collection worker, search
+scheduling, and persistent run history are implemented. There is no web UI or
+live source integration. Automatic collection is disabled by default.
 
 ## Requirements
 
@@ -61,7 +62,9 @@ Flyway validates and applies `src/main/resources/db/migration/V*__*.sql` on star
 no vacancy domain schema. Add a new migration for each schema change; never edit
 an applied migration. `V2__create_search_queries.sql` adds search queries without
 changing V1. `V3__create_vacancies.sql` adds vacancies and their search matches.
-Repeated startup keeps existing data and does not reapply migrations.
+`V4__create_collection_runs.sql` adds collection history with a nullable search
+reference and `ON DELETE SET NULL`. Repeated startup keeps existing data and
+does not reapply migrations.
 
 ## Search query API
 
@@ -79,7 +82,11 @@ Query text is stored exactly as supplied, including whitespace, parentheses,
 operators, and quotes. PUT replaces all four editable fields; it preserves the
 UUID and creation time and advances `updatedAt` using the application's clock.
 All timestamps are ISO-8601 UTC strings ending in `Z`, stored as TEXT in SQLite.
-`nextRunAt` is server-managed and remains null in this stage without scheduling.
+`nextRunAt` is server-managed. Enabled searches with a null value are due for
+their first automatic run. Changing an interval adjusts an existing `nextRunAt`
+from the previous completion time; changing other fields retains it. Disabled
+searches are never automatically dispatched. Completing a run of a disabled
+search clears `nextRunAt`.
 
 Invalid input returns 400. A valid UUID with no matching query returns 404 for
 GET, PUT, and DELETE; invalid UUID syntax returns 400. Domain errors include a
@@ -171,6 +178,81 @@ curl -X PATCH "http://127.0.0.1:8080/api/v1/vacancies/$VACANCY_ID/status" \
   -H 'Content-Type: application/json' -d '{"status":"SAVED"}'
 ```
 
+## Offline collection and run history
+
+`VacancySource` fetches existing `VacancyData` records for a saved search. The only
+adapter is `FakeVacancySource`: it returns three deterministic records containing
+two distinct `(FAKE, external_id)` identities. It ignores search expressions and
+uses example.invalid URLs; it never accesses a network or a browser. Records are
+shared across searches to exercise global deduplication and multiple matches.
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `app.collection.enabled` | `false` | Enables automatic polling; manual runs remain available |
+| `app.collection.poll-interval` | `30s` | Positive duration between due-search checks |
+| `app.collection.queue-capacity` | `32` | Positive number of waiting jobs, plus one running job |
+
+The `dev` profile enables automatic fake collection. Use a separate data directory:
+
+```sh
+./gradlew bootRun --args='--spring.profiles.active=dev --job-monitor.data-directory=/tmp/job-monitor-dev'
+```
+
+One worker executes all collections sequentially. A search can have only one
+queued/running job, even across repeated polls and manual requests. The queue is
+bounded; automatic submissions that cannot fit are considered on later polls.
+Queued automatic jobs recheck the saved search before fetching, so disabling or
+deleting a search prevents a queued automatic collection from starting. A run
+already fetching can finish. The next run is calculated from completion plus the
+currently saved interval, on both success and failure. A manual run of an enabled
+search also advances its regular schedule; a disabled search stays disabled.
+
+Fetching holds no database transaction. Ingestion, matches, success statistics,
+and schedule updates commit together. Failure rolls back ingestion and records
+`FAILED` with a sanitized error category in a separate transaction. A search
+deleted while fetching retains its detached history and collected vacancies.
+On startup, unfinished `RUNNING` records become `INTERRUPTED`; surviving enabled
+searches retry after their saved interval from recovery time. Waiting jobs are
+in memory and are not restored; due enabled searches are picked up by later polls.
+Run one application instance per database.
+
+| Method | Path | Success |
+| --- | --- | --- |
+| POST | `/api/v1/search-queries/{id}/run` | 202, accepted asynchronously with no body |
+| GET | `/api/v1/collection-runs` | 200, page JSON |
+| GET | `/api/v1/collection-runs/{id}` | 200, run JSON |
+
+Manual execution is allowed even when automatic collection or the search is
+disabled. A queued/running search or a full queue returns 409 with Problem Detail;
+a missing search/run returns 404; malformed UUIDs, statuses, or pagination return
+400. History accepts optional `searchQueryId` and `status` filters combined with
+AND, plus zero-based `page=0` and `size=20` defaults (size 1–100). Unknown search
+UUIDs return an empty page. Results sort by `startedAt` descending, then UUID
+for stable ordering. Page JSON contains `content`, `page`, `size`, `totalElements`.
+
+Each run includes `id`, nullable `searchQueryId`, the original `searchQueryName`,
+`source`, `status` (`RUNNING`, `SUCCESS`, `FAILED`, `INTERRUPTED`), UTC `startedAt`
+and nullable `finishedAt`, counts, and nullable `errorMessage`. `fetchedCount`
+counts returned records including duplicate identities. `createdCount` and
+`updatedCount` count distinct normalized identities, using the last occurrence
+for fields; updated means an existing vacancy was refreshed, even if its source
+fields did not change. Failed ingestion reports zero committed creates/updates.
+A failed source fetch reports zero fetched records. Review statuses are preserved.
+
+```sh
+SEARCH_ID='replace-with-search-uuid'
+curl -i -X POST "http://127.0.0.1:8080/api/v1/search-queries/$SEARCH_ID/run"
+curl "http://127.0.0.1:8080/api/v1/collection-runs?searchQueryId=$SEARCH_ID&status=SUCCESS&page=0&size=20"
+curl "http://127.0.0.1:8080/api/v1/vacancies?searchQueryId=$SEARCH_ID"
+RUN_ID='replace-with-run-uuid'
+curl "http://127.0.0.1:8080/api/v1/collection-runs/$RUN_ID"
+```
+
+Wait for the accepted run to finish in history before repeating POST. With the
+fake source, the first run creates two vacancies and repeated runs refresh those
+two records without new rows or resetting user statuses. Deleting the search
+preserves history and its original name, setting `searchQueryId` to null.
+
 ## Verification and build
 
 ```sh
@@ -191,6 +273,14 @@ round-trips, global deduplication, field updates, preserved timestamps/status,
 multiple matches, deletion cascades, transaction rollback (including batch
 failure), filters, stable pagination, HTTP errors, and a V2-to-V3 upgrade retaining
 searches and metadata. Migration reruns remain a no-op.
+Collection tests cover first runs, due boundaries, individual intervals, interval
+changes, disabled/queued jobs, manual execution, bounded queues, duplicate
+submissions, one-worker execution, distinct statistics, preserved statuses,
+source failures, database rollback, detached history, and a real close/reopen
+cycle against the same SQLite database. HTTP tests cover 202/400/404/409 and
+filtering/pagination. Scheduling uses a managed clock without long waits or
+Thread.sleep; latches and bounded completion waits coordinate worker tests.
+
 Unit tests cover search validation and timestamp behavior with a fixed clock,
 macOS/Linux default paths, XDG_DATA_HOME, and an explicit override.
 
@@ -233,8 +323,8 @@ src/main/java/com/ororura/jobmonitor/
   JobMonitorApplication.java
   config/          SQLite and platform data-directory configuration
   search/          Search model, JDBC repository, service, REST DTOs and endpoints
-  collection/      Placeholders for future collection and scheduling
-  source/          Placeholders for future source adapters
+  collection/      Bounded worker, scheduler, execution, run history and REST API
+  source/          VacancySource contract and deterministic offline fake adapter
   vacancy/         Vacancy data/model, JDBC persistence, service and review REST API
 src/main/resources/
   application.yml
