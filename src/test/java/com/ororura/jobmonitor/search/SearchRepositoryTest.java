@@ -125,7 +125,7 @@ class SearchRepositoryTest {
     existingDatabase.update(
         "INSERT INTO application_metadata (key, value) VALUES (?, ?)", "existing", "preserved");
 
-    Flyway flyway = Flyway.configure().dataSource(dataSource).load();
+    Flyway flyway = Flyway.configure().dataSource(dataSource).target("2").load();
     assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
     assertThat(
             existingDatabase.queryForObject(
