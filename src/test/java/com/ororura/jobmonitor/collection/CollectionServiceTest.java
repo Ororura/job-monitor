@@ -10,7 +10,6 @@ import com.ororura.jobmonitor.search.SearchQuery;
 import com.ororura.jobmonitor.search.SearchQueryRequest;
 import com.ororura.jobmonitor.search.SearchService;
 import com.ororura.jobmonitor.source.FakeVacancySource;
-import com.ororura.jobmonitor.source.VacancySource;
 import com.ororura.jobmonitor.vacancy.Vacancy;
 import com.ororura.jobmonitor.vacancy.VacancyData;
 import com.ororura.jobmonitor.vacancy.VacancyService;
@@ -43,7 +42,7 @@ class CollectionServiceTest {
   @Autowired private VacancyService vacancies;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private CollectionTestClock clock;
-  @MockitoBean private VacancySource source;
+  @MockitoBean private FakeVacancySource source;
 
   @DynamicPropertySource
   static void database(DynamicPropertyRegistry registry) {

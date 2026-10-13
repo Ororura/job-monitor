@@ -11,7 +11,8 @@ public record SearchQueryResponse(
     boolean enabled,
     Instant createdAt,
     Instant updatedAt,
-    Instant nextRunAt) {
+    Instant nextRunAt,
+    String source) {
 
   static SearchQueryResponse from(SearchQuery query) {
     return new SearchQueryResponse(
@@ -22,6 +23,7 @@ public record SearchQueryResponse(
         query.enabled(),
         query.createdAt(),
         query.updatedAt(),
-        query.nextRunAt());
+        query.nextRunAt(),
+        query.source());
   }
 }

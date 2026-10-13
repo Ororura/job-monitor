@@ -39,7 +39,8 @@ public class SearchService {
             request.enabled(),
             now,
             now,
-            null);
+            null,
+            request.source() == null ? "FAKE" : request.source());
     repository.insert(query);
     return query;
   }
@@ -64,7 +65,8 @@ public class SearchService {
             request.enabled(),
             existing.createdAt(),
             clock.instant(),
-            nextRunAt);
+            nextRunAt,
+            request.source() == null ? existing.source() : request.source());
     if (!repository.update(updated)) {
       throw new SearchNotFoundException(id);
     }
@@ -92,6 +94,10 @@ public class SearchService {
     }
     if (request.enabled() == null) {
       throw new SearchValidationException("Enabled flag is required");
+    }
+    if (request.source() != null
+        && !java.util.Set.of("FAKE", "PLAYWRIGHT").contains(request.source())) {
+      throw new SearchValidationException("Source must be FAKE or PLAYWRIGHT");
     }
   }
 }

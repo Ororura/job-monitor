@@ -2,7 +2,8 @@ package com.ororura.jobmonitor.collection;
 
 import com.ororura.jobmonitor.search.SearchQuery;
 import com.ororura.jobmonitor.search.SearchRepository;
-import com.ororura.jobmonitor.source.VacancySource;
+import com.ororura.jobmonitor.source.BrowserSourceException;
+import com.ororura.jobmonitor.source.VacancySources;
 import com.ororura.jobmonitor.vacancy.VacancyData;
 import com.ororura.jobmonitor.vacancy.VacancyService;
 import java.time.Clock;
@@ -21,7 +22,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class CollectionService implements SmartInitializingSingleton {
   private final SearchRepository searches;
   private final CollectionRunRepository runs;
-  private final VacancySource source;
+  private final VacancySources sources;
   private final VacancyService vacancies;
   private final Clock clock;
   private final TransactionTemplate transaction;
@@ -29,13 +30,13 @@ public class CollectionService implements SmartInitializingSingleton {
   CollectionService(
       SearchRepository searches,
       CollectionRunRepository runs,
-      VacancySource source,
+      VacancySources sources,
       VacancyService vacancies,
       Clock clock,
       PlatformTransactionManager transactionManager) {
     this.searches = searches;
     this.runs = runs;
-    this.source = source;
+    this.sources = sources;
     this.vacancies = vacancies;
     this.clock = clock;
     this.transaction = new TransactionTemplate(transactionManager);
@@ -77,7 +78,8 @@ public class CollectionService implements SmartInitializingSingleton {
     new DelegatingErrorHandlingRunnable(
             () -> {
               // Source access must never hold the single database connection or a transaction.
-              List<VacancyData> data = source.fetch(started.query());
+              List<VacancyData> data =
+                  sources.resolve(started.query().source()).fetch(started.query());
               fetched.set(data.size());
               transaction.executeWithoutResult(
                   status -> {
@@ -114,7 +116,9 @@ public class CollectionService implements SmartInitializingSingleton {
                         fetchedCount,
                         0,
                         0,
-                        "Collection failed (" + exception.getClass().getSimpleName() + ")");
+                        exception instanceof BrowserSourceException browserError
+                            ? browserError.getMessage()
+                            : "Collection failed (" + exception.getClass().getSimpleName() + ")");
                     scheduleNext(searchId, finishedAt);
                   });
             })
@@ -132,7 +136,7 @@ public class CollectionService implements SmartInitializingSingleton {
             UUID.randomUUID(),
             query.id(),
             query.name(),
-            source.source(),
+            query.source(),
             CollectionRunStatus.RUNNING,
             now,
             null,

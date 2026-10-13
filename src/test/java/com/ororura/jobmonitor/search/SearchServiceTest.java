@@ -32,6 +32,34 @@ class SearchServiceTest {
       new SearchService(repository, Clock.fixed(NOW, ZoneOffset.UTC));
 
   @Test
+  void supportsExplicitSourceAndPreservesItForLegacyUpdates() {
+    var created = service.create(new SearchQueryRequest(JAVA, EXPRESSION, 10, false, "PLAYWRIGHT"));
+    assertThat(created.source()).isEqualTo("PLAYWRIGHT");
+    when(repository.findById(created.id())).thenReturn(Optional.of(created));
+    when(repository.update(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+    assertThat(
+            service
+                .update(created.id(), new SearchQueryRequest(JAVA, EXPRESSION, 10, false))
+                .source())
+        .isEqualTo("PLAYWRIGHT");
+    assertThat(
+            service
+                .update(created.id(), new SearchQueryRequest(JAVA, EXPRESSION, 10, false, "FAKE"))
+                .source())
+        .isEqualTo("FAKE");
+    assertThat(service.create(new SearchQueryRequest(JAVA, JAVA, 10, false)).source())
+        .isEqualTo("FAKE");
+  }
+
+  @ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"HH", "", "fake"})
+  void rejectsUnknownSources(String source) {
+    assertThatThrownBy(() -> service.create(new SearchQueryRequest(JAVA, JAVA, 10, true, source)))
+        .isInstanceOf(SearchValidationException.class);
+    verifyNoInteractions(repository);
+  }
+
+  @Test
   void createsQueryWithoutChangingExpression() {
     SearchQuery created = service.create(new SearchQueryRequest(JAVA, EXPRESSION, 10, true));
 

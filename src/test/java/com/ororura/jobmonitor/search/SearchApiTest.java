@@ -64,6 +64,31 @@ class SearchApiTest {
   }
 
   @Test
+  void sourceIsOptionalInLegacyJsonAndRoundTripsForBrowserSearches() throws Exception {
+    var legacy =
+        send(
+            POST,
+            BASE_PATH,
+            "{\"name\":\"Java\",\"queryText\":\"Java\",\"intervalMinutes\":10,\"enabled\":false}");
+    assertThat(legacy.statusCode()).isEqualTo(201);
+    assertThat(objectMapper.readTree(legacy.body()).get("source").asString()).isEqualTo("FAKE");
+    var response =
+        send(
+            POST,
+            BASE_PATH,
+            objectMapper.writeValueAsString(
+                new SearchQueryRequest("Browser", EXPRESSION, 10, false, "PLAYWRIGHT")));
+    assertThat(response.statusCode()).isEqualTo(201);
+    var created = objectMapper.readValue(response.body(), SearchQueryResponse.class);
+    assertThat(created.source()).isEqualTo("PLAYWRIGHT");
+    var updated =
+        send(PUT, BASE_PATH + "/" + created.id(), objectMapper.writeValueAsString(VALID_REQUEST));
+    assertThat(updated.statusCode()).isEqualTo(200);
+    assertThat(objectMapper.readTree(updated.body()).get("source").asString())
+        .isEqualTo("PLAYWRIGHT");
+  }
+
+  @Test
   void createsListsReadsUpdatesAndDeletesQuery() throws Exception {
     assertThat(send(GET, BASE_PATH, null).body()).isEqualTo("[]");
     Instant beforeCreate = Instant.now();
