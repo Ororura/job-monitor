@@ -6,7 +6,8 @@ The application starts Spring Boot, creates a SQLite database, applies Flyway
 migrations, and provides REST APIs for managing search queries and reviewing
 vacancies. An offline fake source, an opt-in Playwright source, a bounded
 sequential collection worker, search scheduling, and persistent run history are
-implemented. There is no web UI. Browser collection has been verified against
+implemented. A local Thymeleaf + HTMX web interface manages searches, vacancies,
+collection history, and read-only configuration. Browser collection has been verified against
 local fixtures only; no public job site adapter is supplied. Automatic collection
 and browser collection are independently disabled by default.
 
@@ -31,8 +32,8 @@ a separate SQLite installation is optional.
 ./gradlew bootRun
 ```
 
-The server listens on `127.0.0.1:8080`. Search management is available at
-`/api/v1/search-queries`; an HTTP 404 at `/` is expected because there is no UI.
+Open [Job Monitor](http://127.0.0.1:8080) in your browser. The server listens on
+`127.0.0.1:8080`; the REST API remains available under `/api/v1/`.
 Stop the application with Ctrl+C.
 
 The data directory is created automatically before opening `job-monitor.db`:
@@ -69,6 +70,70 @@ reference and `ON DELETE SET NULL`. `V5__add_search_query_source.sql` defaults
 existing searches to `FAKE`. `V6__allow_unknown_vacancy_fields.sql` allows null
 employer/location and preserves vacancy rows, review statuses, associations,
 indexes, and foreign keys. Repeated startup does not reapply migrations.
+
+## Local web interface
+
+| Page | Purpose |
+| --- | --- |
+| `/` | SQLite-backed counts, recent vacancies/runs, upcoming checks and safe diagnostics |
+| `/searches` | Create/edit queries, choose FAKE/PLAYWRIGHT, toggle scheduling, confirm deletion and queue manual runs |
+| `/vacancies` | Filter by status/source/search, sort by discovery time, paginate and change review status |
+| `/collections` | Filter/paginate run history; `/collections/{id}` shows run details |
+| `/settings` | Read-only collection/browser configuration and local database location |
+
+The UI calls existing services directly. Thymeleaf escapes user content; mutations
+use POST forms with session CSRF tokens. REST endpoints and their request/response
+contracts are unchanged. Session IDs use cookies only; cookies must be enabled for
+web forms. Basic pages and form submissions also work without JavaScript.
+[HTMX](https://htmx.org/docs/) 2.0.11 and its license are vendored in
+`src/main/resources/static/js`; CSS, scripts, and fonts require no CDN or frontend
+build. System light/dark mode is the default; the theme selector saves a local
+browser preference. Times display in the application's OS timezone, identified
+in the footer. SQLite timestamps remain UTC.
+
+Start with an offline demonstration:
+
+1. Open `/searches/new`, enter a name and an expression such as
+   `(Java OR "Java-разработчик") AND (Junior OR стажёр)`.
+2. Select **FAKE** and save. The expression, including surrounding whitespace,
+   is preserved; FAKE intentionally ignores it and returns deterministic test data.
+3. Click **Запустить сбор**. Acceptance means queued, not completed. A duplicate
+   queued/running request or full queue is reported as a conflict. Pending searches
+   and visible active runs refresh every eight seconds; manual refresh is available.
+4. Open `/vacancies`: the fake source creates two unique vacancies from three
+   fetched records. Repeat collection: the same vacancies are updated, not duplicated.
+5. Set a vacancy to SAVED, then inspect `/collections` and a run's details.
+6. Restart the app with the same data directory: searches, vacancies, statuses,
+   associations, and run history persist.
+
+Automatic collection stays disabled unless explicitly enabled in configuration.
+Checking a query's enabled flag alone does not enable the global scheduler.
+PLAYWRIGHT searches can be saved while the source is disabled; the UI explains
+that state and a manual run records the existing sanitized source failure.
+There is no HH.ru adapter. Settings cannot write configuration; global changes
+require a restart. The database path is visible only as local settings information;
+source URLs and raw diagnostic messages are not displayed.
+
+### Web tests and visual verification
+
+```sh
+./gradlew test --tests '*WebMvcIntegrationTest' --tests '*WebFormattingTest'
+./gradlew playwrightInstall   # one-time Chromium installation; requires network
+./gradlew browserTest --tests '*WebBrowserTest'
+./gradlew spotlessCheck check build browserTest
+```
+
+Web integration tests use real HTTP/HTML rendering and temporary SQLite. Browser
+tests run a local Spring Boot application with automatic/browser collection disabled,
+use FAKE, block external requests, and skip automatic browser downloads. Once Gradle
+dependencies and Chromium are cached, run with `--offline` for network-free tests.
+Synchronisation uses Locator assertions and bounded Awaitility, without `Thread.sleep`.
+The complete browser workflow closes/restarts Spring Boot against the same test DB
+and verifies deduplication and persisted statuses. Additional tests cover forms,
+filtering/pagination, eight-second polling, JavaScript-free forms, and desktop/mobile
+layout at 1440/390 px in light/dark themes. Screenshots are generated under
+`build/reports/web-visual/`; HTML test reports are under `build/reports/tests/`.
+These browser checks were performed on macOS Apple Silicon; Fedora was not tested.
 
 ## Search query API
 
