@@ -4,9 +4,11 @@
 A single-user local application for collecting and reviewing job vacancies.
 The application starts Spring Boot, creates a SQLite database, applies Flyway
 migrations, and provides REST APIs for managing search queries and reviewing
-vacancies. An offline fake source, a bounded sequential collection worker, search
-scheduling, and persistent run history are implemented. There is no web UI or
-live source integration. Automatic collection is disabled by default.
+vacancies. An offline fake source, an opt-in Playwright source, a bounded
+sequential collection worker, search scheduling, and persistent run history are
+implemented. There is no web UI. Browser collection has been verified against
+local fixtures only; no public job site adapter is supplied. Automatic collection
+and browser collection are independently disabled by default.
 
 ## Requirements
 
@@ -63,8 +65,10 @@ no vacancy domain schema. Add a new migration for each schema change; never edit
 an applied migration. `V2__create_search_queries.sql` adds search queries without
 changing V1. `V3__create_vacancies.sql` adds vacancies and their search matches.
 `V4__create_collection_runs.sql` adds collection history with a nullable search
-reference and `ON DELETE SET NULL`. Repeated startup keeps existing data and
-does not reapply migrations.
+reference and `ON DELETE SET NULL`. `V5__add_search_query_source.sql` defaults
+existing searches to `FAKE`. `V6__allow_unknown_vacancy_fields.sql` allows null
+employer/location and preserves vacancy rows, review statuses, associations,
+indexes, and foreign keys. Repeated startup does not reapply migrations.
 
 ## Search query API
 
@@ -77,6 +81,9 @@ does not reapply migrations.
 | DELETE | `/api/v1/search-queries/{id}` | 204, no body |
 
 POST and PUT require `name`, `queryText`, `intervalMinutes`, and `enabled`.
+Optional `source` accepts `FAKE` or `PLAYWRIGHT` (case-sensitive). Omission/null
+defaults to `FAKE` on creation and preserves the current source on update.
+Responses include `source`; older request JSON remains supported.
 Name and query text must not be blank; the interval must be at least 10 minutes.
 Query text is stored exactly as supplied, including whitespace, parentheses,
 operators, and quotes. PUT replaces all four editable fields; it preserves the
@@ -138,8 +145,9 @@ Upsert refreshes source fields and `lastSeenAt`, preserving the internal UUID,
 match multiple searches; duplicate matches are ignored. Deleting a search
 cascades its matches while preserving all vacancies and other matches.
 
-Required source fields are `source`, `externalId`, `title`, `employerName`, `area`,
-and an absolute HTTP/HTTPS `url` without embedded credentials. Surrounding
+Required source fields are `source`, `externalId`, `title`, and an absolute
+HTTP/HTTPS `url` without embedded credentials. Unknown `employerName` and `area`
+may be null; supplied values must not be blank. Surrounding
 whitespace is stripped; source identifiers remain case-sensitive. Salary bounds,
 currency, and publication time can be null. Non-null salaries must be non-negative,
 and the lower bound must not exceed the upper bound. Salaries use `BigDecimal`
@@ -167,7 +175,7 @@ tie-breaker in the same direction. The response contains `content`, `page`,
 
 ```sh
 curl 'http://127.0.0.1:8080/api/v1/vacancies?page=0&size=20&sort=firstSeenAt,desc'
-curl 'http://127.0.0.1:8080/api/v1/vacancies?status=NEW&source=HH'
+curl 'http://127.0.0.1:8080/api/v1/vacancies?status=NEW&source=FAKE'
 
 # Use existing UUIDs from the local database/API:
 SEARCH_ID='replace-with-search-uuid'
@@ -180,7 +188,7 @@ curl -X PATCH "http://127.0.0.1:8080/api/v1/vacancies/$VACANCY_ID/status" \
 
 ## Offline collection and run history
 
-`VacancySource` fetches existing `VacancyData` records for a saved search. The only
+`VacancySource` fetches existing `VacancyData` records for a saved search. The default
 adapter is `FakeVacancySource`: it returns three deterministic records containing
 two distinct `(FAKE, external_id)` identities. It ignores search expressions and
 uses example.invalid URLs; it never accesses a network or a browser. Records are
@@ -305,6 +313,8 @@ resolution; a native Fedora run is still needed to validate that specific host.
 | Gradle wrapper | 9.6.0 |
 | Spring Boot | 4.1.1 |
 | SQLite JDBC | 3.53.4.0 |
+| Playwright Java | 1.63.0 |
+| jsoup | 1.23.2 |
 | Flyway | 12.4.0 (Spring Boot BOM) |
 | JUnit Jupiter | 6.0.3 (Spring Boot BOM) |
 | Spotless / google-java-format | 8.10.4 / 1.36.1 |
@@ -324,7 +334,7 @@ src/main/java/com/ororura/jobmonitor/
   config/          SQLite and platform data-directory configuration
   search/          Search model, JDBC repository, service, REST DTOs and endpoints
   collection/      Bounded worker, scheduler, execution, run history and REST API
-  source/          VacancySource contract and deterministic offline fake adapter
+  source/          Source selection, fake adapter, Chromium lifecycle and HTML parsing
   vacancy/         Vacancy data/model, JDBC persistence, service and review REST API
 src/main/resources/
   application.yml
@@ -334,5 +344,187 @@ src/test/java/com/ororura/jobmonitor/
 ```
 
 Keep databases, browser profiles, cookies, and credentials outside Git. Live
-source integrations are not enabled by this foundation. Follow `AGENTS.md`
+source integrations are not enabled by default. Follow `AGENTS.md`
 when implementing subsequent MVP features.
+
+## Opt-in Playwright collection
+
+`PlaywrightVacancySource` implements the same `VacancySource` contract as the fake.
+A single configured, explicitly permitted endpoint supplies searches whose
+`source` is `PLAYWRIGHT`; its vacancies and run history use `PLAYWRIGHT`. This is
+an adapter for the HTML contract below, verified using local fixtures, **not an
+HH.ru integration or a universal job-site scraper**. HH.ru and its subdomains
+are rejected by configuration. A new permitted site with different HTML needs
+its own parser/source adapter behind `VacancySource`; collection business logic
+and persistence need no changes. Source/external ID identities must be stable
+across all searches for the configured endpoint. Do not switch the endpoint to
+a different provider using the same `PLAYWRIGHT` identity namespace and database.
+
+### Browser installation
+
+Java 25 must be selected as described above. Install Chromium once and repeat
+installation after upgrading the pinned Playwright dependency:
+
+```sh
+# macOS ARM64 (native ARM64 JDK, not an Intel JDK under Rosetta)
+./gradlew playwrightInstall
+./gradlew browserTest
+```
+
+The Gradle task runs `com.microsoft.playwright.CLI install chromium` using the
+project's Java toolchain. Playwright stores binaries outside Git, normally under
+`~/Library/Caches/ms-playwright` on macOS and `~/.cache/ms-playwright` on Linux.
+`PLAYWRIGHT_BROWSERS_PATH` can override that path; use the same value for install,
+tests and application startup. Application startup and collection never download
+browsers automatically. See the [official browser installation guide](https://playwright.dev/java/docs/browsers).
+
+Fedora is outside Playwright's [official Linux support matrix](https://playwright.dev/java/docs/intro#system-requirements).
+For a native Fedora installation, the distro's [Chromium package](https://packages.fedoraproject.org/pkgs/chromium/chromium/)
+provides a convenient starting point for native runtime dependencies:
+
+```sh
+sudo dnf install chromium
+./gradlew playwrightInstall
+./gradlew browserTest
+```
+
+Job Monitor still launches the Playwright-pinned Chromium binary, not the distro
+browser. Do not run Playwright's apt-based `install --with-deps` on Fedora. If a
+bundled binary fails to launch, run `ldd /absolute/path/to/the/bundled/browser`
+and use `dnf provides '*/missing-library.so'` to identify missing libraries,
+then install the matching Fedora packages. Headed mode also needs a graphical
+session. Native Fedora browser compatibility has not been tested in this change;
+validate `browserTest` on the target Fedora host before enabling collection.
+
+### Configuration and enabling a permitted endpoint
+
+| Property | Default | Meaning |
+| --- | --- | --- |
+| `app.playwright.enabled` | `false` | Allows browser collection; never enables automatic polling |
+| `app.playwright.headless` | `true` | Set `false` to display Chromium |
+| `app.playwright.navigation-timeout` | `30s` | Positive timeout for launch/navigation/network fetching |
+| `app.playwright.operation-timeout` | `10s` | Positive timeout for Locator waits and browser operations |
+| `app.playwright.max-pages` | `5` | Positive maximum number of search pages per run |
+| `app.playwright.max-vacancies` | `100` | Positive maximum number of distinct vacancies returned per run |
+| `app.playwright.search-url` | unset | Absolute HTTP(S) search endpoint, without query, fragment or credentials |
+| `app.playwright.access-confirmed` | `false` | Explicit confirmation that the configured source permits this access |
+
+Set `search-url` using `JOB_MONITOR_BROWSER_SEARCH_URL` or Spring configuration.
+Only enable collection after establishing permitted access to that specific
+endpoint and implementing/verifying its supported HTML contract. For an owned
+or otherwise authorized endpoint, start the application with:
+
+```sh
+export JOB_MONITOR_BROWSER_SEARCH_URL='http://127.0.0.1:8090/search'
+./gradlew bootRun --args='--app.playwright.enabled=true --app.playwright.access-confirmed=true'
+# Headed mode (requires a graphical desktop):
+./gradlew bootRun --args='--app.playwright.enabled=true --app.playwright.access-confirmed=true --app.playwright.headless=false'
+```
+
+These examples assume an authorized fixture-compatible server already runs at
+that address. They do not enable automatic scheduling. Create a browser search:
+
+```sh
+curl http://127.0.0.1:8080/api/v1/search-queries \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Authorized browser search","queryText":"(Java AND \"Spring Boot\") OR (Kotlin AND NOT senior)","intervalMinutes":30,"enabled":false,"source":"PLAYWRIGHT"}'
+# Use the returned search ID for the existing manual-run endpoint:
+curl -X POST "http://127.0.0.1:8080/api/v1/search-queries/$SEARCH_ID/run"
+```
+
+### Supported HTML contract
+
+Search requests use the URL-encoded `q` parameter containing the exact saved
+expression, including leading/trailing spaces, operators and quotes. A source's
+own search engine interprets it; the adapter does not rewrite its logic. Every
+next-page request retains the original expression and other pagination parameters.
+
+```html
+<section data-job-results data-ready="true">
+  <article data-job-card data-external-id="123">
+    <a data-job-title href="/vacancies/123">Java developer</a>
+    <span data-job-employer>Example employer</span>
+    <span data-job-area>Remote</span>
+    <span data-job-salary data-salary-from="100000.01"
+          data-salary-to="150000.02" data-currency="RUB"></span>
+    <time datetime="2026-10-13T09:00:00Z"></time>
+  </article>
+</section>
+<a data-job-next href="/search?page=2">Next</a>
+```
+
+Use `data-ready="true"` only after results are complete. Empty results require an
+explicit `data-job-empty` element. Missing/contradictory markers or a page with
+only invalid cards fail with `STRUCTURE`; individual invalid cards are skipped
+and only their count is logged. `data-job-blocked`, `data-captcha` or a CAPTCHA
+iframe stop the run with `BLOCKED`. No CAPTCHA or access restriction is bypassed.
+
+A title link and a stable ID are required. Prefer `data-external-id`; otherwise
+IDs are extracted from `/vacancies/{id}`. Relative links resolve against the
+page URL. Canonical vacancy URLs exclude fragments and `tracking`/`utm_*` query
+parameters while retaining parameters that may identify the vacancy.
+Salary bounds use decimal attributes (dot decimal separator, optional grouping
+spaces), parsed directly as `BigDecimal`, never floating point. Supplied currency
+codes are preserved without guessing. Employer, area, salary, currency and
+publication time may be absent/null. Unknown publication dates stay null.
+
+Pagination follows `a[data-job-next]` unless `aria-disabled="true"`, stopping when
+there is no next page, a URL cycle, or a configured limit. Next pages must use
+the same origin **and search path**. HTTP requests outside the configured origin
+are aborted; redirects, 403 and 429 stop the run. No vacancy detail pages are
+visited. Pages requiring external CDN assets, redirects, login sessions, a
+different pagination model or arbitrary CSS selectors need a permitted adapter
+extension and dedicated tests.
+
+Each fetch creates and closes Playwright, Chromium, an isolated BrowserContext
+and Page on the collection worker thread. No cookies/profile are retained between
+runs. Application shutdown signals browser jobs to stop before another page;
+queued browser jobs fail with `SHUTDOWN` without opening a browser. The worker
+waits for the active bounded browser operation and teardown before database
+shutdown. Errors retain the existing fixed-delay retry schedule and never
+persist raw browser error messages, URLs, HTML, cookies or credentials.
+
+### Offline tests and diagnostics
+
+Parser and mock-browser tests require no browser binaries or internet:
+
+```sh
+./gradlew test --tests '*HtmlVacancyParserTest' --tests '*PlaywrightVacancySourceTest'
+./gradlew spotlessCheck
+./gradlew check
+./gradlew build
+```
+
+As with all Gradle tasks, dependencies must already be cached for a completely
+offline run (`--offline`). Real browser tests are separately tagged and do not
+run in ordinary `check`/`build`; install Chromium before invoking them:
+
+```sh
+./gradlew browserTest
+./gradlew browserTest -Pheaded
+```
+
+They use checked-in fixtures in `src/test/resources/fixtures`, loopback HTTP
+servers and temporary SQLite databases. Coverage includes real navigation,
+dynamic Locator waits, pagination/limits/deduplication, query encoding, isolation,
+access denial, redirects, CAPTCHA, timeouts, resource teardown, manual/scheduled
+collection, review-status preservation, multiple search matches and application
+shutdown. No external vacancy site is contacted. Reports are in
+`build/reports/tests/test` and `build/reports/tests/browserTest`.
+
+Inspect `errorMessage` in the existing collection-run API:
+
+| Diagnostic | Action |
+| --- | --- |
+| `DISABLED` | Enable browser collection only for a permitted configured endpoint, or select `FAKE` |
+| `CONFIGURATION` | Check source registration, search URL and access confirmation; invalid enabled configuration also fails startup |
+| `LAUNCH` | Run `playwrightInstall`; check the browser cache path, native libraries and desktop availability in headed mode |
+| `NAVIGATION` | Check endpoint availability, TLS and HTTP errors against the authorized server |
+| `TIMEOUT` | Verify response/ready markers; adjust bounded timeouts when justified |
+| `STRUCTURE` | Inspect the authorized HTML fixture and update the source parser contract/tests |
+| `BLOCKED` | Stop and investigate source restrictions, CAPTCHA, 403/429, redirects or an unapproved next-page origin/path |
+| `SHUTDOWN` | The application is closing; restart and retry when appropriate |
+
+Logging reports only fixed failure codes and malformed-card counts. Review
+source-specific access permission before changing restrictions; browser debug
+traces and screenshots are not collected by this adapter.
