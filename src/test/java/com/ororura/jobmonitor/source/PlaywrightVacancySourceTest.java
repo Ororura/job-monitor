@@ -76,6 +76,20 @@ class PlaywrightVacancySourceTest {
   }
 
   @Test
+  void hhQueryUrlUsesTextAndPreservesConfiguredFiltersAndRawExpression() {
+    var uri =
+        PlaywrightVacancySource.queryUrl(
+            URI.create(
+                "https://spb.hh.ru/search/vacancy?text=old&area=2&order_by=publication_time&page=1"),
+            EXPRESSION);
+    assertThat(uri.getRawQuery())
+        .contains("area=2", "order_by=publication_time", "page=1")
+        .doesNotContain("text=old", "q=");
+    assertThat(URLDecoder.decode(uri.getRawQuery().split("text=", 2)[1], StandardCharsets.UTF_8))
+        .isEqualTo(EXPRESSION);
+  }
+
+  @Test
   void followsPaginationDeduplicatesAndPreservesExpressionOnEveryPage() throws Exception {
     var source = configured(5, 100);
     when(page.content())
