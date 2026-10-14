@@ -101,9 +101,15 @@ public final class LocalVacancyServer implements AutoCloseable {
       boolean secondPage =
           exchange.getRequestURI().getRawQuery() != null
               && exchange.getRequestURI().getRawQuery().contains("page=2");
+      boolean secondHhPage =
+          fixtureName.equals("hh-results")
+              && exchange.getRequestURI().getRawQuery() != null
+              && exchange.getRequestURI().getRawQuery().contains("page=1");
       String html =
           HtmlVacancyParserTest.fixture(
-              secondPage && fixtureName.equals("results") ? "page2" : fixtureName);
+              secondPage && fixtureName.equals("results")
+                  ? "page2"
+                  : secondHhPage ? "hh-page2" : fixtureName);
       if (asynchronous) {
         html =
             "<html><body><script>setTimeout(() => document.body.innerHTML = `"

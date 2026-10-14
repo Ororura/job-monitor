@@ -1,0 +1,11 @@
+# Enable this profile only for the user's confirmed permitted HH.ru access.
+app:
+  collection:
+    enabled: false
+  playwright:
+    enabled: true
+    access-confirmed: true
+    format: HH
+    search-url: https://spb.hh.ru/search/vacancy?text=&salary=&ored_clusters=true&order_by=publication_time&enable_snippets=true&area=2&hhtmFrom=vacancy_search_list&hhtmFromLabel=vacancy_search_line
+    max-pages: 100
+    max-vacancies: 5000

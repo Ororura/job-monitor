@@ -45,6 +45,27 @@ class PlaywrightPropertiesTest {
         .isInstanceOf(IllegalArgumentException.class);
   }
 
+  @Test
+  void acceptsConfirmedHhSearchWithQueryAndRejectsMoreThan100Pages() {
+    var uri = URI.create("https://spb.hh.ru/search/vacancy?area=2&order_by=publication_time");
+    var enabled = properties(true, uri, true, 100, Duration.ofSeconds(1));
+    org.assertj.core.api.Assertions.assertThat(enabled.format())
+        .isEqualTo(PlaywrightProperties.HtmlFormat.HH);
+    assertThatThrownBy(() -> properties(true, uri, false, 100, Duration.ofSeconds(1)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> properties(true, uri, true, 101, Duration.ofSeconds(1)))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(
+            () ->
+                properties(
+                    true,
+                    URI.create("http://spb.hh.ru/search/vacancy"),
+                    true,
+                    100,
+                    Duration.ofSeconds(1)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
   private static PlaywrightProperties properties(
       boolean enabled, URI url, boolean confirmed, int pages, Duration timeout) {
     return new PlaywrightProperties(

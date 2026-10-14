@@ -33,13 +33,24 @@ public class PlaywrightVacancySource
   private final PlaywrightProperties properties;
   private final ChromiumBrowser browser;
   private final HtmlVacancyParser parser;
+  private final HhVacancyParser hhParser;
   private final AtomicBoolean stopping = new AtomicBoolean();
 
   public PlaywrightVacancySource(
       PlaywrightProperties properties, ChromiumBrowser browser, HtmlVacancyParser parser) {
+    this(properties, browser, parser, new HhVacancyParser());
+  }
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public PlaywrightVacancySource(
+      PlaywrightProperties properties,
+      ChromiumBrowser browser,
+      HtmlVacancyParser parser,
+      HhVacancyParser hhParser) {
     this.properties = properties;
     this.browser = browser;
     this.parser = parser;
+    this.hhParser = hhParser;
   }
 
   @Override
@@ -66,15 +77,23 @@ public class PlaywrightVacancySource
     page.context().route("**/*", route -> permittedRequest(route, accessFailure));
     var unique = new LinkedHashMap<String, VacancyData>();
     Set<URI> visited = new HashSet<>();
-    URI next = queryUrl(properties.searchUrl(), expression);
+    URI next = queryUrl(properties.searchUrl(), expression, properties.format());
     for (int number = 0; number < properties.maxPages(); number++) {
       requireRunning();
       requireSearchPage(next);
       if (!visited.add(next)) {
         break;
       }
+      if (number > 0 && properties.format() == PlaywrightProperties.HtmlFormat.HH) {
+        // Throttle page navigations; result readiness still uses Locator waits.
+        page.waitForTimeout(2_000);
+        requireRunning();
+      }
       navigate(page, next, accessFailure);
-      var parsed = parser.parse(page.content(), page.url(), properties.maxVacancies());
+      var parsed =
+          properties.format() == PlaywrightProperties.HtmlFormat.HH
+              ? hhParser.parse(page.content(), page.url(), properties.maxVacancies())
+              : parser.parse(page.content(), page.url(), properties.maxVacancies());
       checkAccess(accessFailure);
       if (parsed.skippedCards() > 0) {
         LOGGER.warn("Skipped {} malformed vacancy cards", parsed.skippedCards());
@@ -88,7 +107,7 @@ public class PlaywrightVacancySource
       if (parsed.nextUrl() == null) {
         break;
       }
-      next = queryUrl(URI.create(parsed.nextUrl()), expression);
+      next = queryUrl(URI.create(parsed.nextUrl()), expression, properties.format());
     }
     return List.copyOf(unique.values());
   }
@@ -111,7 +130,10 @@ public class PlaywrightVacancySource
       if (status < 200 || status >= 300) {
         throw new BrowserSourceException(BrowserSourceException.Reason.NAVIGATION);
       }
-      page.locator(HtmlVacancyParser.READY)
+      page.locator(
+              properties.format() == PlaywrightProperties.HtmlFormat.HH
+                  ? HhVacancyParser.READY
+                  : HtmlVacancyParser.READY)
           .first()
           .waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.ATTACHED));
       checkAccess(accessFailure);
@@ -126,6 +148,14 @@ public class PlaywrightVacancySource
 
   private void permittedRequest(
       Route route, AtomicReference<BrowserSourceException.Reason> accessFailure) {
+    if (properties.format() == PlaywrightProperties.HtmlFormat.HH
+        && (!route.request().isNavigationRequest()
+            || route.request().frame().parentFrame() != null)) {
+      // HH search results are server-rendered. Only the main search document is fetched;
+      // optional feedback/advertising frames must not be mistaken for a search navigation.
+      route.abort();
+      return;
+    }
     URI target = URI.create(route.request().url());
     if (!sameOrigin(properties.searchUrl(), target)) {
       if (route.request().isNavigationRequest()) {
@@ -145,6 +175,7 @@ public class PlaywrightVacancySource
       try {
         int status = response.status();
         if (status == 403 || status == 429 || (status >= 300 && status < 400)) {
+          LOGGER.warn("Browser source request stopped (HTTP {})", status);
           accessFailure.compareAndSet(null, BrowserSourceException.Reason.BLOCKED);
           route.abort();
         } else {
@@ -183,17 +214,30 @@ public class PlaywrightVacancySource
   }
 
   static URI queryUrl(URI target, String expression) {
+    return queryUrl(
+        target,
+        expression,
+        PlaywrightProperties.isHhHost(target)
+            ? PlaywrightProperties.HtmlFormat.HH
+            : PlaywrightProperties.HtmlFormat.FIXTURE);
+  }
+
+  static URI queryUrl(URI target, String expression, PlaywrightProperties.HtmlFormat format) {
+    String queryParameter = format == PlaywrightProperties.HtmlFormat.HH ? "text" : "q";
     StringBuilder parameters = new StringBuilder();
     String existing = target.getRawQuery();
     if (existing != null) {
       for (String parameter : existing.split("&")) {
         String key = parameter.split("=", 2)[0];
-        if (!"q".equals(URLDecoder.decode(key, StandardCharsets.UTF_8))) {
+        if (!queryParameter.equals(URLDecoder.decode(key, StandardCharsets.UTF_8))) {
           parameters.append(parameter).append('&');
         }
       }
     }
-    parameters.append("q=").append(URLEncoder.encode(expression, StandardCharsets.UTF_8));
+    parameters
+        .append(queryParameter)
+        .append('=')
+        .append(URLEncoder.encode(expression, StandardCharsets.UTF_8));
     return URI.create(
         target.getScheme()
             + "://"
