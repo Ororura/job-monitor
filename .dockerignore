@@ -1,0 +1,12 @@
+# Only build inputs may enter the image context.
+**
+!Dockerfile
+!LICENSE
+!gradlew
+!build.gradle.kts
+!settings.gradle.kts
+!gradle.properties
+!gradle/
+!gradle/**
+!src/
+!src/**

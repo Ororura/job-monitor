@@ -1,0 +1,14 @@
+services:
+  job-monitor:
+    image: ghcr.io/ororura/job-monitor:latest
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - job-monitor-data:/data
+    init: true
+    shm_size: 1gb
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  job-monitor-data:

@@ -36,6 +36,82 @@ Open [Job Monitor](http://127.0.0.1:8080) in your browser. The server listens on
 `127.0.0.1:8080`; the REST API remains available under `/api/v1/`.
 Stop the application with Ctrl+C.
 
+### Docker and automatic delivery to GHCR
+
+The `CI/CD` workflow runs on pushes, pull requests and manual dispatch. Formatting,
+tests, PMD, SpotBugs and the executable build run on Ubuntu and macOS with Java 25.
+A separate Linux job runs all browser tests against local fixtures. Native amd64
+and arm64 runners build and smoke-test the runtime image: non-root execution,
+offline Chromium launch, FAKE collection, SQLite persistence after restart and the
+container health check. Reports are kept as workflow artifacts for seven days.
+
+Only after all checks pass, pushes and manual runs publish a multi-platform image
+to `ghcr.io/ororura/job-monitor` using the workflow's `GITHUB_TOKEN`. No registry
+password or personal token needs to be added to repository secrets. Pull requests,
+including forks, build and test without registry login or publication permissions.
+
+| Trigger | Published tags |
+| --- | --- |
+| Push/manual run on `main` | `latest`, `main`, `sha-<full commit SHA>` |
+| Push/manual run on another branch | Sanitized branch name, `sha-<full commit SHA>`; no `latest` |
+| Version tag, e.g. `v1.2.3` | `v1.2.3`, `1.2.3`, `1.2`, `sha-<full commit SHA>`; no `latest` |
+| Pull request | Build and tests only |
+
+Publication includes OCI source/revision labels, a software bill of materials
+(SBOM) and build provenance. The workflow summary records the image digest and
+tags. For a reproducible deployment, use the recorded `@sha256:...` reference.
+Docker Actions and Java 25 base images are pinned to verified commit/digest
+references; update these pins deliberately when updating the toolchain.
+
+GitHub creates new container packages as private by default, even for a public
+repository. For anonymous pulls, set the package visibility to public in the
+GitHub package settings. Otherwise authenticate with a token having `read:packages`
+using `docker login ghcr.io`; do not commit that token. Repository Actions must
+remain enabled and allowed to write packages. Package access is linked to this
+repository through the image's source label and workflow token.
+
+After the first successful publication from `main`, start the app locally:
+
+```sh
+docker compose up -d
+docker compose logs -f job-monitor
+```
+
+Open `http://127.0.0.1:8080`. The provided `compose.yml` publishes the port only on
+host loopback and persists `/data/job-monitor.db` in the `job-monitor-data` named
+volume. The image listens on all interfaces **inside the container** so Docker
+port forwarding works; the direct Java application's loopback default is unchanged.
+Chromium and its OS dependencies are included using the Playwright version pinned
+in Gradle. Collection remains disabled by default; enable the `hh` profile explicitly
+with `SPRING_PROFILES_ACTIVE=hh` in Compose configuration when permitted access is
+confirmed. The runtime runs as UID/GID `10001`; bind-mounted data directories must
+be writable by that identity. `TZ` can configure presentation time zones.
+
+To update or stop without deleting data:
+
+```sh
+docker compose pull
+docker compose up -d
+docker compose down
+```
+
+Keep the data volume when recreating containers. Back up SQLite before updates;
+schema migrations run automatically on startup, so older application images are
+not guaranteed to work against a migrated database. Deleting the volume deletes
+the database.
+
+Build and validate the image locally without publishing:
+
+```sh
+docker build -t job-monitor:local .
+python3 scripts/docker-smoke.py job-monitor:local
+```
+
+Docker is optional for running and testing the Java application. The image uses a
+multi-stage Gradle build and a JRE runtime; its build context excludes Git metadata,
+local credentials, database files and generated output. Smoke tests create and
+remove their own temporary containers and volume and never contact external sources.
+
 The data directory is created automatically before opening `job-monitor.db`:
 
 | OS | Default directory |
@@ -119,6 +195,7 @@ source URLs and raw diagnostic messages are not displayed.
 ```sh
 ./gradlew test --tests '*WebMvcIntegrationTest' --tests '*WebFormattingTest'
 ./gradlew playwrightInstall   # one-time Chromium installation; requires network
+./gradlew playwrightInstall -PwithBrowserDeps  # also install Linux browser OS dependencies
 ./gradlew browserTest --tests '*WebBrowserTest'
 ./gradlew spotlessCheck check build browserTest
 ```
