@@ -70,17 +70,6 @@ Some Java files and directories were intentionally pre-created as empty placehol
 - Do not treat "recursive collection" as unbounded crawling: source adapters must have explicit pagination and result limits.
 - Make time-dependent code testable (prefer injected `Clock` over scattered `Instant.now()`).
 
-## Source adapters and responsible access
-
-- Keep all source-specific fetching logic behind `VacancySource`; orchestration and persistence must not depend on Playwright or any particular website.
-- Start development and automated tests with a deterministic `FakeVacancySource` and local HTML fixtures.
-- Add live integrations only when the source permits the intended automated access, and respect applicable terms and access restrictions.
-- For HH.ru, do **not** assume browser automation is allowed simply because the pages are public. Prefer an officially permitted API, authorized integration, or user-configured vacancy email alerts. Keep any HH.ru Playwright integration disabled until its permitted use is established.
-- Never implement CAPTCHA bypass, anti-bot evasion, fingerprint spoofing, proxy rotation to evade limits, credential theft, or access-control bypass.
-- On access denial, CAPTCHA, or rate limiting (e.g. HTTP 403/429), stop the affected run, log a sanitized reason, and apply backoff instead of attempting to circumvent the restriction.
-- When Playwright is used, confine browser objects to their owning thread; Playwright Java objects are not generally thread-safe. Always close pages/contexts/browsers reliably.
-- Do not run real external scraping as part of unit tests or CI.
-
 ## Local application behavior
 
 - Bind the web server to `127.0.0.1` by default. Do not expose unauthenticated administration to the network.
