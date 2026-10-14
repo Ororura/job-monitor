@@ -7,8 +7,8 @@ migrations, and provides REST APIs for managing search queries and reviewing
 vacancies. An offline fake source, an opt-in Playwright source, a bounded
 sequential collection worker, search scheduling, and persistent run history are
 implemented. A local Thymeleaf + HTMX web interface manages searches, vacancies,
-collection history, and read-only configuration. Browser collection has been verified against
-local fixtures only; no public job site adapter is supplied. Automatic collection
+collection history, and read-only configuration. Browser collection supports local fixtures and an opt-in HH.ru search profile
+for the user-confirmed permitted access. Automatic collection
 and browser collection are independently disabled by default.
 
 ## Requirements
@@ -110,7 +110,7 @@ Automatic collection stays disabled unless explicitly enabled in configuration.
 Checking a query's enabled flag alone does not enable the global scheduler.
 PLAYWRIGHT searches can be saved while the source is disabled; the UI explains
 that state and a manual run records the existing sanitized source failure.
-There is no HH.ru adapter. Settings cannot write configuration; global changes
+The optional `hh` profile supports HH.ru searches under confirmed permitted access. Settings cannot write configuration; global changes
 require a restart. The database path is visible only as local settings information;
 source URLs and raw diagnostic messages are not displayed.
 
@@ -415,15 +415,13 @@ when implementing subsequent MVP features.
 ## Opt-in Playwright collection
 
 `PlaywrightVacancySource` implements the same `VacancySource` contract as the fake.
-A single configured, explicitly permitted endpoint supplies searches whose
-`source` is `PLAYWRIGHT`; its vacancies and run history use `PLAYWRIGHT`. This is
-an adapter for the HTML contract below, verified using local fixtures, **not an
-HH.ru integration or a universal job-site scraper**. HH.ru and its subdomains
-are rejected by configuration. A new permitted site with different HTML needs
-its own parser/source adapter behind `VacancySource`; collection business logic
-and persistence need no changes. Source/external ID identities must be stable
-across all searches for the configured endpoint. Do not switch the endpoint to
-a different provider using the same `PLAYWRIGHT` identity namespace and database.
+A single configured, explicitly permitted endpoint supplies searches whose `source`
+is `PLAYWRIGHT`. Generic fixture-format vacancies use `PLAYWRIGHT`; HH-format
+vacancies use `HH` with the site's numeric ID, keeping source identity separate
+from the browser transport. Collection business logic and persistence use the same
+existing services. The HH profile is opt-in and requires the user's confirmed
+permitted access; other sites need their own permitted parser contract. Do not switch
+generic fixture providers that share the same identity namespace in one database.
 
 ### Browser installation
 
@@ -471,7 +469,8 @@ validate `browserTest` on the target Fedora host before enabling collection.
 | `app.playwright.operation-timeout` | `10s` | Positive timeout for Locator waits and browser operations |
 | `app.playwright.max-pages` | `5` | Positive maximum number of search pages per run |
 | `app.playwright.max-vacancies` | `100` | Positive maximum number of distinct vacancies returned per run |
-| `app.playwright.search-url` | unset | Absolute HTTP(S) search endpoint, without query, fragment or credentials |
+| `app.playwright.search-url` | unset | Absolute HTTP(S) search endpoint; query parameters supported for HH format, no fragment/credentials |
+| `app.playwright.format` | inferred | `HH` for hh.ru hosts, otherwise `FIXTURE`; explicit HH format also supports owned offline fixtures |
 | `app.playwright.access-confirmed` | `false` | Explicit confirmation that the configured source permits this access |
 
 Set `search-url` using `JOB_MONITOR_BROWSER_SEARCH_URL` or Spring configuration.
@@ -496,6 +495,61 @@ curl http://127.0.0.1:8080/api/v1/search-queries \
 # Use the returned search ID for the existing manual-run endpoint:
 curl -X POST "http://127.0.0.1:8080/api/v1/search-queries/$SEARCH_ID/run"
 ```
+
+### HH.ru search profile
+
+For the user's confirmed permitted HH.ru access, the `hh` profile configures the
+provided Saint Petersburg search (`area=2`, `order_by=publication_time`). It enables
+manual browser collection with a hard maximum of **100 pages per run** and a safety
+limit of **5,000 unique vacancies**. Automatic collection remains disabled.
+
+```sh
+./gradlew bootRun --args='--spring.profiles.active=hh'
+```
+
+Open `http://127.0.0.1:8080/searches`, create or edit a query, choose **PLAYWRIGHT**,
+enter the exact expression to send to HH.ru, and use **Запустить сбор**. The raw
+expression replaces `text` in the configured URL on every page; location, ordering
+and other search parameters are preserved. `q` is retained only for the generic
+fixture format. Do not combine the `hh` and `dev` profiles for unattended collection.
+
+The HH parser uses public `data-qa` card and next-page markers, recognizes explicit
+empty results, and reads numeric salary values from HTML5 `data` elements without
+floating-point conversion. Missing publication times remain unknown; salary amounts
+are stored as supplied, without converting hourly/daily amounts into monthly pay.
+Sponsored-card IDs are extracted from their public response links without following
+advertising redirects or sending applications. Vacancy identities use `(HH, numeric
+vacancy ID)` and canonical `https://hh.ru/vacancy/{id}` URLs; the UI offers an HH.ru
+vacancy-source filter. Search/run source PLAYWRIGHT identifies the collection adapter.
+
+Only search documents are fetched in HH mode. Scripts, XHR, images, advertisements
+and external resources are blocked. Sequential next-page navigations have a two-second
+pause; readiness uses Locator waits. The adapter stops at the next-page end, a cycle,
+or either limit. It does not log in, retain a profile, visit vacancy detail pages or
+circumvent access restrictions. CAPTCHA, 403/429 and redirects terminate the run with
+safe diagnostics and the existing retry schedule. Start with a smaller manual run:
+
+```sh
+./gradlew bootRun --args='--spring.profiles.active=hh --app.playwright.max-pages=1 --app.playwright.max-vacancies=5'
+```
+
+The default application configuration still leaves Playwright and automatic collection
+off. The HH profile is an explicit opt-in for the confirmed access; adjust it if the
+source's permission or limits change. The supported production endpoints are HTTPS
+`spb.hh.ru/search/vacancy` and `hh.ru/search/vacancy`. Unapproved origins, credentials,
+fragments, unsupported HH endpoints, and HH limits above 100 pages are rejected.
+
+HH unit tests and Chromium tests use synthetic local HTML and isolated local servers:
+
+```sh
+./gradlew test --tests '*Hh*Test'
+./gradlew browserTest --tests '*HhBrowserIntegrationTest'
+```
+
+They do not contact HH.ru or follow the fixture's external vacancy/advertising links.
+A separate authorized live smoke check on 2026-10-13 (macOS Apple Silicon) successfully
+collected five vacancies for `Java` from one HH page into temporary SQLite. This
+checks the real markup and ingestion path, not a complete 100-page crawl.
 
 ### Supported HTML contract
 
