@@ -84,6 +84,10 @@ def main(image):
         request(base, vacancy_path + "/status", {"status": "SAVED"}, "PATCH")
         docker("exec", name, "test", "-s", "/data/job-monitor.db")
         docker("restart", "--time=30", name)
+        # Docker may assign a new ephemeral host port when restarting the container.
+        address = docker("port", name, "8080/tcp")
+        assert address.startswith("127.0.0.1:")
+        base = "http://" + address
         wait_for("Application did not restart", ready)
         assert request(base, query_path)["queryText"] == query["queryText"]
         assert request(base, vacancy_path)["status"] == "SAVED"
