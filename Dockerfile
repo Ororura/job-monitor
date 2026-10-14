@@ -28,6 +28,7 @@ RUN java --enable-native-access=ALL-UNNAMED -cp '/app/lib/*' \
     && mkdir -p /data \
     && chown jobmonitor:jobmonitor /data \
     && chmod -R a+rX /ms-playwright
+COPY LICENSE /app/LICENSE
 USER 10001:10001
 VOLUME ["/data"]
 EXPOSE 8080
