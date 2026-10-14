@@ -165,6 +165,15 @@ public class VacancyRepository {
     return new VacancyPage(content, page, size, total);
   }
 
+  public long countFirstSeenBetween(Instant from, Instant until) {
+    return Objects.requireNonNull(
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM vacancies WHERE first_seen_at >= ? AND first_seen_at <= ?",
+            Long.class,
+            timestamp(from),
+            timestamp(until)));
+  }
+
   private static String timestamp(Instant value) {
     return value == null ? null : TIMESTAMP_FORMAT.format(value);
   }

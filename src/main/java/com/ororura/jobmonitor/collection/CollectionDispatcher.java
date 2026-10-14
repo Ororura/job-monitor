@@ -29,6 +29,10 @@ public class CollectionDispatcher {
     this.worker = worker;
   }
 
+  public boolean isPending(UUID searchId) {
+    return pending.contains(searchId);
+  }
+
   public void runManually(UUID searchId) {
     searches.findById(searchId);
     if (!submit(searchId, false)) {
