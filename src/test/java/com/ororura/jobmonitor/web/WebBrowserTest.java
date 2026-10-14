@@ -184,13 +184,18 @@ class WebBrowserTest {
     page.navigate(base + NEW_SEARCH);
     page.locator(SUBMIT_SELECTOR).click();
     assertThat(page.locator("#name-error")).hasText("Укажите название запроса.");
+    // HTMX restores focus during settling; wait before filling the replacement form.
+    assertThat(page.locator("#search-form.htmx-settling")).hasCount(0);
     page.locator(NAME_SELECTOR).fill("Initial");
     page.locator(SUBMIT_SELECTOR).click();
     assertThat(page.locator("#query-error")).hasText("Укажите поисковое выражение.");
+    assertThat(page.locator("#search-form.htmx-settling")).hasCount(0);
     page.locator(QUERY_SELECTOR).fill(EXPRESSION);
+    assertThat(page.locator(QUERY_SELECTOR)).hasValue(EXPRESSION);
     page.locator("#intervalMinutes").fill("9");
     page.locator(SUBMIT_SELECTOR).click();
     assertThat(page.locator("#interval-error")).containsText("10 минут");
+    assertThat(page.locator("#search-form.htmx-settling")).hasCount(0);
     page.locator("#intervalMinutes").fill("30");
     page.locator(SUBMIT_SELECTOR).click();
     assertThat(page.locator(CARD_TITLE)).hasText("Initial");
