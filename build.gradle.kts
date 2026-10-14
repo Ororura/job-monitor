@@ -116,6 +116,9 @@ tasks.register<JavaExec>("playwrightInstall") {
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("com.microsoft.playwright.CLI")
     args("install", "chromium")
+    if (providers.gradleProperty("withBrowserDeps").isPresent) {
+        args("--with-deps")
+    }
     javaLauncher.set(javaToolchains.launcherFor(java.toolchain))
 }
 
